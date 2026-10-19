@@ -56,7 +56,7 @@
 完整步骤（适合直接交给 AI 部署助手执行）见 **[DEPLOY.md](DEPLOY.md)**。简要流程：
 
 ```bash
-cd /opt && git clone https://github.com/<作者>/clawbot-health-buddy.git && cd clawbot-health-buddy
+cd /opt && git clone https://github.com/Hanye1108/clawbot-health-buddy.git && cd clawbot-health-buddy
 sudo bash deploy/install.sh --mirror    # 安装依赖、生成 .env、注册服务
 nano .env                               # 填 DeepSeek 和和风天气的 Key
 .venv/bin/python -m bot check           # 自检

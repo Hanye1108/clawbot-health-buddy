@@ -63,11 +63,10 @@
 ```bash
 sudo -i
 cd /opt
-git clone https://github.com/<作者>/clawbot-health-buddy.git
+git clone https://github.com/Hanye1108/clawbot-health-buddy.git
 cd /opt/clawbot-health-buddy
 ```
 
-> 把 `<作者>` 换成仓库实际所在的 GitHub 用户名。
 > 国内服务器 clone GitHub 很慢或失败时：在自己电脑上下载仓库 ZIP，用 SFTP、宝塔或 1Panel 的文件管理上传到 `/opt` 再解压，目录名改成 `clawbot-health-buddy`。
 
 ✅ 检查点：`ls /opt/clawbot-health-buddy` 能看到 `bot/`、`deploy/`、`DEPLOY.md`。
