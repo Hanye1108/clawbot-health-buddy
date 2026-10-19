@@ -1,0 +1,109 @@
+# clawbot-health-buddy · 微信 AI 健康小助手
+
+一个住在微信里的 AI 健康小助手：陪聊天、记录饮食/运动/体重、按时提醒喝水和吃饭、每天早上报天气、每周写一份温和的小结。由 DeepSeek 驱动，部署在你自己的服务器上。
+
+最初是给女朋友做的个人项目：希望它像一个贴心的朋友，而不是一个让人焦虑的计数器。
+
+## 功能
+
+- 💬 **聊天**：日常闲聊，记得之前聊过什么（对话历史存在本地 SQLite）
+- 🍜 **饮食记录**：说一句「午饭吃了牛肉面」或**拍张照片**，估算热量并记下，随时告诉你今天大概吃了多少
+- 🏃 **运动记录**：「快走 40 分钟」按 MET 公式估算消耗；手表数字也可以直接报
+- ⚖️ **体重记录**：只看趋势，不盯单次；减得太快会温和提醒放慢
+- 🎯 **热量目标**：用 Mifflin-St Jeor 公式在代码里计算，带安全下限，大模型只负责讲解
+- 🌤 **天气**：随时问；每天 7 点主动推送天气和穿衣建议
+- ⏰ **提醒**：三餐询问（已经记过就不问）、喝水、每周称重，一句「关闭提醒」就停
+- 📊 **周总结**：统计由代码完成，大模型写成一段有温度的话；数据不足时坦白说看不出结论
+- 🎙 **语音**：ClawBot 通道下语音消息自动转文字
+
+## 安全与隐私设计
+
+健康和体重是很私密、也很容易让人焦虑的话题，这个项目把下面几条写进了代码和提示词：
+
+- 不配合极端节食、断食、催吐、过度运动；遇到怀孕、慢性病、未成年、吃完就自责等情况，不给减重数字，建议找医生、营养师或身边信任的人。
+- 每日摄入有安全下限；未满 18 岁或 BMI 偏低时只给维持量，不设减重缺口。
+- 不评判身体和饮食，不夸"吃得少""减得快"。
+- 首次对话说明自己是 AI、数据存在哪里；「清除数据」一键删除全部记录。
+- 所有数据只存在你自己服务器的 SQLite 文件里。
+
+> ⚠️ 本项目给出的热量、消耗都是**估算**，不是医疗建议。
+
+## 架构
+
+```
+ 微信（她的手机）
+     │  ClawBot 聊天 / 公众号测试号
+     ▼
+ 微信服务器 ──(iLink 长轮询，服务器主动连接，无需公网端口)──┐
+                                                       ▼
+                         ┌──────── 你的服务器 ─────────────────────┐
+                         │ bot/channels   收发消息（ilink / mp）    │
+                         │ bot/core       处理消息、定时推送        │
+                         │ bot/tools      给模型用的工具            │──► DeepSeek（对话、看图）
+                         │ bot/records    记录与计算（SQLite）      │──► 和风天气
+                         └─────────────────────────────────────────┘
+```
+
+两种微信通道：
+
+| 通道 | 说明 |
+|---|---|
+| `ilink`（推荐） | 微信 2026 年 3 月开放的官方个人号机器人协议（ClawBot 插件）。扫码绑定后，ClawBot 作为一个普通聊天出现在微信里，可以置顶。**不需要域名、备案和公网端口。** |
+| `mp` | 公众号测试号，需要微信能访问你服务器的 80 端口。见 [docs/MP_TEST_ACCOUNT.md](docs/MP_TEST_ACCOUNT.md)。 |
+
+## 快速开始
+
+完整步骤（适合直接交给 AI 部署助手执行）见 **[DEPLOY.md](DEPLOY.md)**。简要流程：
+
+```bash
+cd /opt && git clone https://github.com/<作者>/clawbot-health-buddy.git && cd clawbot-health-buddy
+sudo bash deploy/install.sh --mirror    # 安装依赖、生成 .env、注册服务
+nano .env                               # 填 DeepSeek 和和风天气的 Key
+.venv/bin/python -m bot check           # 自检
+.venv/bin/python -m bot login me        # 用微信扫码绑定 ClawBot
+systemctl start clawbot-health-buddy    # 启动
+```
+
+## 在微信里怎么用
+
+直接说话就行：「午饭吃了一碗牛肉面」「今天 108 斤」「跑步 30 分钟」「这周总结」「明天要带伞吗」，或者拍一张饭菜照片。
+
+内置指令：`关闭提醒` `开启提醒` `关闭称重提醒` `开启称重提醒` `清除数据` `帮助`
+测试指令（立即触发一次推送）：`#test morning|breakfast|lunch|dinner|water|weigh|weekly`
+
+## 项目结构
+
+```
+bot/
+  __main__.py      命令行：run / check / login / accounts
+  config.py        读取 .env
+  db.py            SQLite
+  records.py       资料、热量计算、饮食/运动/体重记录与统计
+  tools.py         提供给模型的工具定义
+  llm.py           DeepSeek 调用（对话、写作、看图）
+  core.py          消息处理、主动推送、定时任务时间表
+  prompts.py       提示词与提醒文案（改语气看这里）
+  weather.py       和风天气
+  channels/
+    ilink.py       微信 ClawBot 通道
+    mp.py          公众号测试号通道
+deploy/            一键安装脚本、systemd 服务、备份脚本
+docs/              进展记录、测试号通道说明
+tests/             单元测试（python -m unittest，无需联网）
+```
+
+## 开发与测试
+
+```bash
+PYTHONPATH=.:tests python -m unittest discover -s tests
+```
+
+测试不访问任何外部服务。
+
+## 进展与已知问题
+
+见 [docs/PROGRESS.md](docs/PROGRESS.md)。主要待验证：ClawBot 主动推送的时效、ClawBot 通道下的图片格式。
+
+## 许可证
+
+[MIT](LICENSE)。使用时请遵守微信、DeepSeek、和风天气的服务条款。
