@@ -11,6 +11,15 @@ from . import prompts as P
 log = logging.getLogger(__name__)
 _client = None
 MAX_TOOL_ROUNDS = 6
+# 配置的模型名 → API 实际返回的模型名（deepseek-chat 这类是别名，官方会指向不同的具体版本）
+actual_models = {}
+
+
+def _note(resp, requested):
+    real = getattr(resp, "model", None)
+    if real and actual_models.get(requested) != real:
+        actual_models[requested] = real
+        log.info("模型 %s 实际由 %s 响应", requested, real)
 
 
 def client():
@@ -34,6 +43,20 @@ def get_balance():
             "total": info.get("total_balance", "?"), "currency": info.get("currency", "")}
 
 
+def list_models():
+    """这个 Key 能用的模型列表。"""
+    return sorted(m.id for m in client().models.list().data)
+
+
+def describe_models():
+    lines = []
+    for name in dict.fromkeys([config.MODEL, config.VISION_MODEL]):
+        real = actual_models.get(name)
+        lines.append(f"{name} → 实际响应：{real}" if real and real != name else
+                     f"{name}" + ("（还没调用过，实际版本未知）" if not real else ""))
+    return lines
+
+
 def now_text():
     return now().strftime("%Y年%m月%d日 %H:%M")
 
@@ -49,6 +72,7 @@ def chat(messages, tools, run_tool, fallback="我查得有点久，请再说一�
             resp = client().chat.completions.create(
                 model=config.MODEL, messages=messages, tools=tools, timeout=60)
             timing.append(f"模型{time.monotonic() - t:.1f}s")
+            _note(resp, config.MODEL)
             msg = resp.choices[0].message
             if not msg.tool_calls:
                 return msg.content or fallback
@@ -102,6 +126,7 @@ def analyze_photo(data, mime=None):
             {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
         ]}],
         timeout=90)
+    _note(resp, config.VISION_MODEL)
     log.info("看图耗时 %.1fs（图片 %dKB）", time.monotonic() - t, len(data) // 1024)
     raw = (resp.choices[0].message.content or "").strip()
     start, end = raw.find("{"), raw.rfind("}")

@@ -62,6 +62,7 @@ class Bot:
             lines.append(f"DeepSeek 余额：{bal['total']} {bal['currency']}" + ("" if bal["available"] else "（不可用！）"))
         except Exception as e:  # noqa: BLE001
             lines.append(f"DeepSeek 余额：查询失败（{type(e).__name__}）")
+        lines.append("模型：" + "；".join(llm.describe_models()))
         lines.append(f"最近连续失败：对话 {self.fails['llm']} 次，看图 {self.fails['vision']} 次")
         lines.append("趋势图网页：" + (config.PUBLIC_URL or "未配置 PUBLIC_URL"))
         return "\n".join(lines)

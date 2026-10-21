@@ -82,7 +82,12 @@ def cmd_check():
             from .llm import client
             r = client().chat.completions.create(
                 model=config.MODEL, messages=[{"role": "user", "content": "回复OK"}], max_tokens=5, timeout=30)
-            show(bool(r.choices), f"DeepSeek 对话模型（{config.MODEL}）")
+            show(bool(r.choices), f"DeepSeek 对话模型：配置 {config.MODEL}，实际响应 {getattr(r, 'model', '?')}")
+            try:
+                from .llm import list_models
+                print(f"ℹ️  这个 Key 可用的模型：{', '.join(list_models())}")
+            except Exception as e:  # noqa: BLE001
+                print(f"ℹ️  查询可用模型失败：{e}")
         except Exception as e:  # noqa: BLE001
             show(False, f"DeepSeek 对话模型（{config.MODEL}）",
                  f"{e}\n   检查 DEEPSEEK_KEY 是否正确、账户是否有余额、模型名是否仍可用")

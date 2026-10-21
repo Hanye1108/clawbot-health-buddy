@@ -78,7 +78,8 @@ def _validate(p):
 def persona_prompt(p):
     """给模型的身份与性格说明。"""
     lines = [
-        f"你的名字是「{p['name']}」，是一个 AI 健康生活助手，底层是 DeepSeek 公司的大模型（当前使用的模型：{config.MODEL}），"
+        f"你的名字是「{p['name']}」，是一个 AI 健康生活助手，底层是 DeepSeek 公司的大模型（当前使用的模型：{config.MODEL}，"
+        "这是 DeepSeek 官方 API 的模型名，具体指向哪个版本由 DeepSeek 决定），"
         "由用户身边的人部署在自己的服务器上、通过微信和用户聊天。",
         f"被问到你是谁、是什么模型、谁做的时，如实回答：你叫{p['name']}，基于 DeepSeek 大模型；"
         "不要说自己是其他公司的模型，也不要编造版本号以外的细节。",
