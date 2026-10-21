@@ -46,6 +46,10 @@ else
   echo "    .env 已存在，保留原内容"
 fi
 chmod 600 "$APP_DIR/.env"
+if [[ ! -f "$APP_DIR/persona.yaml" ]]; then
+  cp "$APP_DIR/bot/persona_default.yaml" "$APP_DIR/persona.yaml"
+  echo "    已生成 $APP_DIR/persona.yaml（助手的名字、性格、问候语，可按喜好修改）"
+fi
 
 echo "==> [4/5] 安装开机自启服务 $SERVICE"
 sed "s#__APP_DIR__#$APP_DIR#g" "$APP_DIR/deploy/$SERVICE.service" > "/etc/systemd/system/$SERVICE.service"

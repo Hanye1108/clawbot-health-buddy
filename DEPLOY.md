@@ -197,9 +197,10 @@ journalctl -u clawbot-health-buddy -n 30 --no-pager    # 应看到「已启动�
 | 从备份恢复 | `systemctl stop clawbot-health-buddy && cp data/backup/bot-3.db data/bot.db && systemctl start clawbot-health-buddy` |
 | ClawBot 登录过期（日志出现「需要重新扫码」） | `.venv/bin/python -m bot login me` 然后重启 |
 | 改提醒时间 | 每个人在微信里直接说就行（「早饭提醒改到9点」）；想改所有新用户的默认值，编辑 `bot/reminders.py` 顶部的 `KINDS`，然后重启 |
-| 改语气、提醒文案 | 编辑 `bot/prompts.py`，然后重启 |
+| 改名字、性格、问候语、提醒文案 | 编辑项目根目录的 `persona.yaml`（没有就 `cp bot/persona_default.yaml persona.yaml`），然后管理员在微信里发 `#reload` 立即生效，不用重启；改坏了会提示哪一行有问题并继续用旧的 |
 | 查看运行状态 | 管理员在自己的 ClawBot 里发 `#status`：各账号最后收到消息的时间、推送窗口、DeepSeek 余额 |
 | 测试告警 | 管理员发 `#test alert`，应收到一条「⚠️ 小助手运行提醒」 |
+| 更新代码后 | 新版本可能加了依赖，运行 `.venv/bin/pip install -r requirements.txt`（国内加 `-i https://pypi.tuna.tsinghua.edu.cn/simple`）再重启 |
 
 ### 出问题时会通知你
 

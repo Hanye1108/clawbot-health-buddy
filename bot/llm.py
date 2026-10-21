@@ -6,7 +6,7 @@ import time
 
 from . import config
 from .db import now
-from .prompts import PERSONA, VISION_PROMPT
+from . import prompts as P
 
 log = logging.getLogger(__name__)
 _client = None
@@ -71,7 +71,7 @@ def write(instruction, data):
     """一次性生成一段文字（不带工具），用于定时推送。"""
     resp = client().chat.completions.create(
         model=config.MODEL,
-        messages=[{"role": "system", "content": f"{PERSONA}\n现在是北京时间{now_text()}。"},
+        messages=[{"role": "system", "content": f"{P.PERSONA}\n现在是北京时间{now_text()}。"},
                   {"role": "user", "content": f"{instruction}\n\n数据：{data}"}],
         timeout=60)
     return (resp.choices[0].message.content or "").strip()
@@ -98,7 +98,7 @@ def analyze_photo(data, mime=None):
     resp = client().chat.completions.create(
         model=config.VISION_MODEL,
         messages=[{"role": "user", "content": [
-            {"type": "text", "text": VISION_PROMPT},
+            {"type": "text", "text": P.VISION_PROMPT},
             {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
         ]}],
         timeout=90)

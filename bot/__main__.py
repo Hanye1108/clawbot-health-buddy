@@ -100,6 +100,13 @@ def cmd_check():
         except Exception as e:  # noqa: BLE001
             show(False, "能访问微信 iLink 服务器", str(e))
 
+    try:
+        from . import persona
+        pp = persona.load()
+        show(True, f"人设配置：{'persona.yaml' if persona.user_file() else '默认'}，名字「{pp['name']}」")
+    except Exception as e:  # noqa: BLE001
+        show(False, "人设配置 persona.yaml", str(e))
+
     if config.WEB_ENABLED:
         print(("ℹ️  趋势图网页对外地址：" + config.PUBLIC_URL) if config.PUBLIC_URL else
               "ℹ️  没有配置 PUBLIC_URL，「看趋势图」功能不可用（可选，见 DEPLOY.md）")

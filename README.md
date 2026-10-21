@@ -20,6 +20,19 @@
 - 👋 **首次自我介绍与新手引导**：第一次聊天时介绍自己、隐私说明和全部功能，再一项一项问称呼、性别年龄、身高体重、运动量和城市（都能跳过），问完直接给出每日热量建议；发「功能介绍」「重新填写资料」随时再来
 - 🎙 **语音**：ClawBot 通道下语音消息自动转文字
 
+## 自定义名字和性格
+
+助手默认叫「小禾」。名字、性格、说话方式、自我介绍、提醒文案都在 `persona.yaml` 里，用中文直接改，管理员在微信里发 `#reload` 立即生效：
+
+```yaml
+name: 阿暖
+personality: |
+  元气满满，像一个爱运动的闺蜜。
+reply_max_chars: 120
+```
+
+安全相关的规则写在代码里，改人设不会关掉它们。
+
 ## 安全与隐私设计
 
 健康和体重是很私密、也很容易让人焦虑的话题，这个项目把下面几条写进了代码和提示词：
@@ -73,7 +86,7 @@ systemctl start clawbot-health-buddy    # 启动
 直接说话就行：「午饭吃了一碗牛肉面」「今天 108 斤」「跑步 30 分钟」「这周总结」「明天要带伞吗」，或者拍一张饭菜照片。
 
 内置指令：`关闭提醒` `开启提醒` `关闭称重提醒` `开启称重提醒` `清除数据` `帮助`
-管理员指令：`#status` 查看运行状态和 DeepSeek 余额，`#test alert` 测试告警（出问题时会自动通知管理员，见 DEPLOY.md）
+管理员指令：`#status` 查看运行状态和 DeepSeek 余额，`#reload` 修改 persona.yaml 后立即生效，`#test alert` 测试告警（出问题时会自动通知管理员，见 DEPLOY.md）
 测试指令（立即触发一次推送）：`#test morning|breakfast|lunch|dinner|water|weigh|weekly`
 
 ## 项目结构
@@ -90,7 +103,9 @@ bot/
   reminders.py     每人一套提醒设置与调度（改默认提醒时间看这里）
   onboarding.py    新手引导：逐项收集基本资料
   web.py           趋势图网页与 CSV 导出
-  prompts.py       提示词与提醒文案（改语气看这里）
+  persona.py       读取人设配置（名字、性格、问候语、提醒文案）
+  persona_default.yaml  人设默认值；复制到根目录 persona.yaml 修改，#reload 生效
+  prompts.py       功能规则与安全规则（一般不用改）
   weather.py       和风天气
   channels/
     ilink.py       微信 ClawBot 通道

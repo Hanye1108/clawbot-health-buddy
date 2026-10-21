@@ -5,11 +5,9 @@ import logging
 import random
 import re
 
-from . import __version__, config, llm, onboarding, records, reminders
+from . import __version__, config, llm, onboarding, persona, records, reminders
 from .db import kv_get, kv_set, now, now_iso, run
-from .prompts import (ADMIN_GUIDE, FEATURE_GUIDE, INTRO, INTRO_ASK_NAME, INTRO_VERSION, MEAL_PROMPTS,
-                      MONTHLY_INSTR, MORNING_INSTR, NIGHT_INSTR, QUIET_NOTICE, SYSTEM_PROMPT, WATER,
-                      WEEKLY_INSTR, WEIGH, WHATS_NEW)
+from . import prompts as P
 from .tools import TOOLS, run_tool
 from .weather import get_weather
 
@@ -92,7 +90,7 @@ class Bot:
         key = f"quiet_notice:{uid}"
         if nxt and nxt > deadline and kv_get(key) != deadline.isoformat():
             kv_set(key, deadline.isoformat())
-            return text + QUIET_NOTICE
+            return text + P.QUIET_NOTICE
         return text
 
     def push(self, uid, text, nudge=None, keep_hours=12):
@@ -117,14 +115,14 @@ class Bot:
 
     # ---------- 自我介绍 ----------
     def introduce(self, uid, ask_name=True):
-        for text in INTRO:
+        for text in P.INTRO:
             self.say(uid, text)
         if uid == self.admin_uid():
-            self.say(uid, ADMIN_GUIDE)
+            self.say(uid, P.ADMIN_GUIDE)
         onboarding.start(uid)
         if ask_name:
-            self.say(uid, INTRO_ASK_NAME)
-        kv_set(f"intro:{uid}", INTRO_VERSION)
+            self.say(uid, P.INTRO_ASK_NAME)
+        kv_set(f"intro:{uid}", P.INTRO_VERSION)
 
     def welcome(self, uid):
         """测试号的「关注」事件：直接做自我介绍。"""
@@ -132,9 +130,9 @@ class Bot:
         self.introduce(uid)
 
     def guide(self, uid):
-        self.send(uid, FEATURE_GUIDE)
+        self.send(uid, P.FEATURE_GUIDE)
         if uid == self.admin_uid():
-            self.send(uid, ADMIN_GUIDE)
+            self.send(uid, P.ADMIN_GUIDE)
 
     # ---------- 接收 ----------
     def build_system(self, uid):
@@ -142,7 +140,7 @@ class Bot:
         skip = ("user_id", "updated_at", "prefs", "weigh_reminder")
         info = {k: v for k, v in p.items() if k not in skip and v is not None}
         info["口味与忌口"] = records.get_prefs(uid)
-        return (f"{SYSTEM_PROMPT}\n\n现在是北京时间{llm.now_text()}（{'一二三四五六日'[now().weekday()]}）。\n"
+        return (f"{P.SYSTEM_PROMPT}\n\n现在是北京时间{llm.now_text()}（{'一二三四五六日'[now().weekday()]}）。\n"
                 f"已保存的用户资料：{json.dumps(info, ensure_ascii=False)}" + onboarding.prompt_for(uid))
 
     def handle_command(self, uid, cmd):
@@ -174,6 +172,14 @@ class Bot:
         is_admin = uid == self.admin_uid()
         if cmd == "#status" and is_admin:
             self.send(uid, self.status_text())
+            return True
+        if cmd == "#reload" and is_admin:
+            try:
+                p = P.load()
+                src = "persona.yaml" if persona.user_file() else "默认设置（还没有 persona.yaml）"
+                self.send(uid, f"已重新加载{src}。名字：{p['name']}。")
+            except Exception as e:  # noqa: BLE001
+                self.send(uid, f"加载失败，继续使用原来的设置：\n{e}")
             return True
         if cmd == "#test alert" and is_admin:
             kv_set("alert:test", "")
@@ -214,9 +220,9 @@ class Bot:
             self.introduce(uid, ask_name=greeting)
             if greeting:
                 return
-        elif kv_get(f"intro:{uid}") != INTRO_VERSION:
-            self.say(uid, WHATS_NEW)
-            kv_set(f"intro:{uid}", INTRO_VERSION)
+        elif kv_get(f"intro:{uid}") != P.INTRO_VERSION:
+            self.say(uid, P.WHATS_NEW)
+            kv_set(f"intro:{uid}", P.INTRO_VERSION)
         if self.handle_command(uid, cmd):
             return
         self.deliver_pending(uid)
@@ -259,14 +265,14 @@ def morning(bot, uid, force=False):
     if weather.startswith(("天气接口出错", "没有找到城市")):
         bot.alert("weather", f"早安天气查询失败：{weather[:150]}\n检查和风天气的 Key、API Host 和额度。", 24)
         return
-    text = llm.write(MORNING_INSTR, weather)
+    text = llm.write(P.MORNING_INSTR, weather)
     bot.push(uid, text, nudge="早上好～今天的天气和提醒准备好啦，回我任意一句就能看到", keep_hours=5)
 
 
 def meal(bot, uid, which, force=False):
     if not force and records.has_meal(uid, now().strftime("%Y-%m-%d"), which):
         return
-    bot.push(uid, random.choice(MEAL_PROMPTS[which]))
+    bot.push(uid, random.choice(P.MEAL_PROMPTS[which]))
 
 
 def water(bot, uid, force=False):
@@ -277,7 +283,7 @@ def water(bot, uid, force=False):
     if total:
         text = f"今天已经喝了大约 {w['约几杯']:g} 杯（{total}ml）啦，离 {goal}ml 还差一点，再来一杯吧～ 喝完跟我说一声我帮你记上。"
     else:
-        text = random.choice(WATER)
+        text = random.choice(P.WATER)
     bot.push(uid, text)
 
 
@@ -285,7 +291,7 @@ def weigh(bot, uid, force=False):
     since = (now().date() - datetime.timedelta(days=5)).isoformat()
     if not force and run("SELECT 1 FROM weights WHERE user_id=? AND day>=? LIMIT 1", (uid, since), fetch=True):
         return
-    bot.push(uid, random.choice(WEIGH))
+    bot.push(uid, random.choice(P.WEIGH))
 
 
 def weekly(bot, uid, force=False):
@@ -294,7 +300,7 @@ def weekly(bot, uid, force=False):
         if force:
             bot.push(uid, "这周还没有饮食或运动记录哦～先随手记一顿试试，有了记录我就能给你写小结啦。")
         return
-    text = llm.write(WEEKLY_INSTR, json.dumps(stats, ensure_ascii=False))
+    text = llm.write(P.WEEKLY_INSTR, json.dumps(stats, ensure_ascii=False))
     bot.push(uid, text, nudge="本周的小结写好啦，回我任意一句就能看到～", keep_hours=24 * 7)
 
 
@@ -309,7 +315,7 @@ def monthly(bot, uid, force=False):
         if force:
             bot.push(uid, "这个月还没有饮食或运动记录哦，有了记录才能写月度小结～")
         return
-    text = llm.write(MONTHLY_INSTR, json.dumps(stats, ensure_ascii=False))
+    text = llm.write(P.MONTHLY_INSTR, json.dumps(stats, ensure_ascii=False))
     bot.push(uid, text, nudge="上个月的小结写好啦，回我任意一句就能看到～", keep_hours=24 * 7)
 
 
@@ -319,7 +325,7 @@ def night(bot, uid, force=False):
         if force:
             bot.push(uid, "今天还没有记录哦，早点休息～")
         return
-    bot.push(uid, llm.write(NIGHT_INSTR, json.dumps(s, ensure_ascii=False)))
+    bot.push(uid, llm.write(P.NIGHT_INSTR, json.dumps(s, ensure_ascii=False)))
 
 
 def run_kind(bot, uid, kind, force=False):
