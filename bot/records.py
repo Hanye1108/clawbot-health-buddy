@@ -9,9 +9,9 @@ from .db import USER_TABLES, now, now_iso, run, today_str
 
 # ---------- 常量 ----------
 FIELDS = {"nickname", "sex", "age", "height_cm", "weight_kg",
-          "goal_weight_kg", "activity", "city", "province"}
+          "goal_weight_kg", "activity", "city", "province", "water_goal_ml"}
 LIMITS = {"age": (10, 100), "height_cm": (120, 220),
-          "weight_kg": (30, 250), "goal_weight_kg": (30, 250)}
+          "weight_kg": (30, 250), "goal_weight_kg": (30, 250), "water_goal_ml": (800, 4000)}
 ACTIVITY = {"sedentary": 1.2, "light": 1.375, "moderate": 1.55, "active": 1.725}
 MEALS = {"breakfast": "早餐", "lunch": "午餐", "dinner": "晚餐", "snack": "加餐"}
 
@@ -69,9 +69,13 @@ def clear_user_data(uid):
 
 
 def set_reminders_flag(uid, enabled, kind="all"):
+    """kind=all：总开关；其他：某一类提醒的开关。"""
     ensure_user(uid)
-    col = "weigh_reminder" if kind == "weigh" else "reminders"
-    run(f"UPDATE profiles SET {col}=? WHERE user_id=?", (1 if enabled else 0, uid))
+    if kind == "all":
+        run("UPDATE profiles SET reminders=? WHERE user_id=?", (1 if enabled else 0, uid))
+    else:
+        from .reminders import set_setting
+        set_setting(uid, kind, enabled=enabled)
 
 
 def add_chat(uid, role, content):
@@ -103,7 +107,7 @@ def save_profile(uid, args):
             lo, hi = LIMITS[k]
             if not lo <= v <= hi:
                 return f"{k}={v} 超出合理范围({lo}-{hi})，请向用户确认"
-            if k == "age":
+            if k in ("age", "water_goal_ml"):
                 v = int(v)
         if k == "sex" and v not in ("female", "male"):
             return "sex 只能是 female 或 male"
@@ -242,6 +246,7 @@ def day_summary(uid, day=None):
            "运动": [{"编号": r["id"], "内容": r["description"], "分钟": r["minutes"],
                      "消耗大卡": r["kcal"]} for r in ex],
            "运动消耗大卡": ex_total}
+    res.update(water_summary(uid, day))
     target = target_info(get_profile(uid)).get("每日建议摄入大卡")
     if target:
         bonus = round(ex_total * EXERCISE_ADD_BACK)
@@ -373,7 +378,8 @@ def week_stats(uid):
            "运动天数": len({r["day"] for r in ex}),
            "运动总分钟": sum(r["minutes"] for r in ex),
            "运动估算消耗大卡": sum(r["kcal"] for r in ex),
-           "体重": weight_trend(uid)}
+           "体重": weight_trend(uid),
+           "喝水": water_stats(uid, days[0], days[-1])}
     t = target_info(get_profile(uid))
     target, floor_kcal = t.get("每日建议摄入大卡"), t.get("安全下限大卡")
     if complete:
@@ -402,3 +408,192 @@ def take_pending(uid):
                (uid, now_iso()), fetch=True)
     run("DELETE FROM pending WHERE user_id=?", (uid,))
     return [r["text"] for r in rows]
+
+
+# ---------- 口味与忌口 ----------
+PREF_KINDS = ("喜欢", "不吃", "过敏或不耐受", "饮食习惯")
+
+
+def get_prefs(uid):
+    raw = get_profile(uid).get("prefs")
+    try:
+        data = json.loads(raw) if raw else {}
+    except ValueError:
+        data = {}
+    return {k: list(data.get(k, [])) for k in PREF_KINDS}
+
+
+def update_prefs(uid, args):
+    ensure_user(uid)
+    prefs = get_prefs(uid)
+    added, removed = [], []
+    for kind, items in (args.get("add") or {}).items():
+        if kind not in PREF_KINDS:
+            return f"类别只能是：{'、'.join(PREF_KINDS)}"
+        for item in items or []:
+            item = str(item).strip()[:30]
+            if item and item not in prefs[kind]:
+                prefs[kind].append(item)
+                added.append(f"{kind}:{item}")
+    for item in args.get("remove") or []:
+        for kind in PREF_KINDS:
+            if item in prefs[kind]:
+                prefs[kind].remove(item)
+                removed.append(f"{kind}:{item}")
+    for kind in PREF_KINDS:
+        prefs[kind] = prefs[kind][-30:]
+    run("UPDATE profiles SET prefs=?, updated_at=? WHERE user_id=?", (dumps(prefs), now_iso(), uid))
+    return dumps({"新增": added, "删除": removed, "当前": prefs})
+
+
+# ---------- 喝水 ----------
+CUP_ML = 250
+
+
+def water_goal(uid):
+    p = get_profile(uid)
+    if p.get("water_goal_ml"):
+        return int(p["water_goal_ml"])
+    w = p.get("weight_kg")
+    if not w:
+        return 1700
+    return int(min(max(w * 30, 1500), 2500) // 100 * 100)
+
+
+def water_summary(uid, day=None):
+    day = day or today_str()
+    rows = run("SELECT id, ml FROM water WHERE user_id=? AND day=? ORDER BY id", (uid, day), fetch=True)
+    total = sum(r["ml"] for r in rows)
+    return {"喝水": [{"编号": r["id"], "毫升": r["ml"]} for r in rows],
+            "喝水合计毫升": total, "约几杯": round(total / CUP_ML, 1), "喝水目标毫升": water_goal(uid)}
+
+
+def log_water(uid, args):
+    try:
+        ml = int(round(float(args.get("ml"))))
+    except (TypeError, ValueError):
+        return "ml 需要是数字"
+    if not 30 <= ml <= 2000:
+        return "单次喝水量超出合理范围(30-2000毫升)，请向用户确认"
+    day, err = parse_day(args.get("date"))
+    if err:
+        return err
+    run("INSERT INTO water (user_id, day, ml, ts) VALUES (?,?,?,?)", (uid, day, ml, now_iso()))
+    return dumps({"状态": "已记录", **water_summary(uid, day)})
+
+
+def delete_water(uid, args):
+    try:
+        wid = int(args.get("water_id"))
+    except (TypeError, ValueError):
+        return "water_id 需要是数字"
+    if not run("SELECT 1 FROM water WHERE id=? AND user_id=?", (wid, uid), fetch=True):
+        return "没有找到这个编号的喝水记录"
+    run("DELETE FROM water WHERE id=? AND user_id=?", (wid, uid))
+    return "已删除"
+
+
+def water_stats(uid, start, end):
+    rows = run("SELECT day, SUM(ml) AS ml FROM water WHERE user_id=? AND day>=? AND day<=? GROUP BY day",
+               (uid, start, end), fetch=True)
+    if not rows:
+        return {"有喝水记录的天数": 0}
+    goal = water_goal(uid)
+    return {"有喝水记录的天数": len(rows),
+            "记录日平均毫升": round(sum(r["ml"] for r in rows) / len(rows)),
+            "达到目标的天数": sum(1 for r in rows if r["ml"] >= goal), "目标毫升": goal}
+
+
+# ---------- 月度统计 ----------
+def month_range(month=None):
+    """month 为 YYYY-MM；为空表示本月（截至今天）。"""
+    today = now().date()
+    if month:
+        try:
+            y, m = (int(x) for x in month.split("-"))
+            first = datetime.date(y, m, 1)
+        except (ValueError, TypeError):
+            return None, None, "month 格式应为 YYYY-MM"
+    else:
+        first = today.replace(day=1)
+    nxt = (first.replace(day=28) + datetime.timedelta(days=4)).replace(day=1)
+    last = min(nxt - datetime.timedelta(days=1), today)
+    if first > today:
+        return None, None, "不能查询未来的月份"
+    return first, last, None
+
+
+def month_stats(uid, month=None):
+    first, last, err = month_range(month)
+    if err:
+        return {"错误": err}
+    a, b = first.isoformat(), last.isoformat()
+    rows = run("SELECT day, meal, kcal FROM meals WHERE user_id=? AND day>=? AND day<=?",
+               (uid, a, b), fetch=True)
+    by = {}
+    for r in rows:
+        by.setdefault(r["day"], []).append((r["meal"], r["kcal"]))
+    complete = [sum(k for _, k in v) for v in by.values()
+                if {"breakfast", "lunch", "dinner"} <= {m for m, _ in v}]
+    ex = run("SELECT day, minutes, kcal FROM exercises WHERE user_id=? AND day>=? AND day<=?",
+             (uid, a, b), fetch=True)
+    ws = run("SELECT day, kg FROM weights WHERE user_id=? AND day>=? AND day<=? ORDER BY day",
+             (uid, a, b), fetch=True)
+    res = {"月份": first.strftime("%Y-%m"), "统计区间": f"{a} 至 {b}",
+           "天数": (last - first).days + 1,
+           "有饮食记录的天数": len(by), "三餐齐全的天数": len(complete),
+           "运动天数": len({r["day"] for r in ex}), "运动总分钟": sum(r["minutes"] for r in ex),
+           "运动估算消耗大卡": sum(r["kcal"] for r in ex),
+           "喝水": water_stats(uid, a, b)}
+    if ws:
+        res["体重"] = {"月初附近": {"日期": ws[0]["day"], "公斤": ws[0]["kg"]},
+                       "最近": {"日期": ws[-1]["day"], "公斤": ws[-1]["kg"]},
+                       "变化公斤": round(ws[-1]["kg"] - ws[0]["kg"], 1), "记录次数": len(ws)}
+        days_span = (datetime.date.fromisoformat(ws[-1]["day"]) - datetime.date.fromisoformat(ws[0]["day"])).days
+        if days_span >= 14 and (ws[-1]["kg"] - ws[0]["kg"]) / days_span * 7 < -FAST_LOSS_WEEK_KG:
+            res["减重偏快提示"] = "平均每周减重超过1公斤，要温和建议放慢、好好吃饭，不要表扬速度"
+    t = target_info(get_profile(uid))
+    if complete:
+        avg = round(sum(complete) / len(complete))
+        res["三餐齐全日的平均大卡"] = avg
+        if t.get("每日建议摄入大卡"):
+            res["每日建议摄入大卡"] = t["每日建议摄入大卡"]
+        if t.get("安全下限大卡") and avg < t["安全下限大卡"]:
+            res["偏低提示"] = "平均摄入低于安全下限，不要表扬，要温和提醒好好吃饭并建议咨询营养师"
+    if len(complete) < 7:
+        res["数据提示"] = "三餐齐全的天数不足7天，饮食方面只能看个大概，不要下结论"
+    return res
+
+
+# ---------- 导出与图表数据 ----------
+def daily_series(uid, days=30):
+    end = now().date()
+    start = end - datetime.timedelta(days=days - 1)
+    a, b = start.isoformat(), end.isoformat()
+
+    def by_day(sql):
+        return {r["day"]: r["v"] for r in run(sql, (uid, a, b), fetch=True)}
+    kcal = by_day("SELECT day, SUM(kcal) AS v FROM meals WHERE user_id=? AND day>=? AND day<=? GROUP BY day")
+    ex = by_day("SELECT day, SUM(minutes) AS v FROM exercises WHERE user_id=? AND day>=? AND day<=? GROUP BY day")
+    water = by_day("SELECT day, SUM(ml) AS v FROM water WHERE user_id=? AND day>=? AND day<=? GROUP BY day")
+    dates = [(start + datetime.timedelta(days=i)).isoformat() for i in range(days)]
+    weights = [(r["day"], r["kg"]) for r in run(
+        "SELECT day, kg FROM weights WHERE user_id=? AND day>=? ORDER BY day",
+        (uid, (end - datetime.timedelta(days=89)).isoformat()), fetch=True)]
+    return {"dates": dates, "kcal": [kcal.get(d) for d in dates], "exercise": [ex.get(d) for d in dates],
+            "water": [water.get(d) for d in dates], "weights": weights}
+
+
+def export_rows(uid):
+    rows = [("类型", "日期", "项目", "内容", "数值", "单位")]
+    for r in run("SELECT day, meal, description, kcal FROM meals WHERE user_id=? ORDER BY day, id", (uid,), fetch=True):
+        rows.append(("饮食", r["day"], MEALS.get(r["meal"], r["meal"]), r["description"], r["kcal"], "大卡"))
+    for r in run("SELECT day, kind, description, minutes, kcal FROM exercises WHERE user_id=? ORDER BY day, id",
+                 (uid,), fetch=True):
+        rows.append(("运动", r["day"], EX_NAMES.get(r["kind"], r["kind"]), f'{r["description"]}（{r["minutes"]}分钟）',
+                     r["kcal"], "大卡"))
+    for r in run("SELECT day, kg FROM weights WHERE user_id=? ORDER BY day", (uid,), fetch=True):
+        rows.append(("体重", r["day"], "", "", r["kg"], "公斤"))
+    for r in run("SELECT day, ml FROM water WHERE user_id=? ORDER BY day, id", (uid,), fetch=True):
+        rows.append(("喝水", r["day"], "", "", r["ml"], "毫升"))
+    return rows

@@ -3,15 +3,19 @@ import datetime
 import json
 import logging
 import random
+import re
 
-from . import __version__, config, llm, records
-from .db import kv_get, kv_set, now, now_iso
-from .prompts import (HELP, MEAL_PROMPTS, MORNING_INSTR, QUIET_NOTICE, SYSTEM_PROMPT, WATER,
-                      WEEKLY_INSTR, WEIGH, WELCOME)
+from . import __version__, config, llm, records, reminders
+from .db import kv_get, kv_set, now, now_iso, run
+from .prompts import (ADMIN_GUIDE, FEATURE_GUIDE, INTRO, INTRO_ASK_NAME, INTRO_VERSION, MEAL_PROMPTS,
+                      MONTHLY_INSTR, MORNING_INSTR, NIGHT_INSTR, QUIET_NOTICE, SYSTEM_PROMPT, WATER,
+                      WEEKLY_INSTR, WEIGH, WHATS_NEW)
 from .tools import TOOLS, run_tool
 from .weather import get_weather
 
 log = logging.getLogger(__name__)
+GREETING = re.compile(r"^\s*(你好|您好|hi|hello|嗨|哈喽|在吗|在不在|hey|开始|嘿)[呀啊吖~～!！。.\s]*$", re.I)
+GUIDE_CMDS = ("功能介绍", "帮助", "help", "/help", "你能做什么", "使用说明", "怎么用")
 
 
 class Bot:
@@ -61,6 +65,7 @@ class Bot:
         except Exception as e:  # noqa: BLE001
             lines.append(f"DeepSeek 余额：查询失败（{type(e).__name__}）")
         lines.append(f"最近连续失败：对话 {self.fails['llm']} 次，看图 {self.fails['vision']} 次")
+        lines.append("趋势图网页：" + (config.PUBLIC_URL or "未配置 PUBLIC_URL"))
         return "\n".join(lines)
 
     # ---------- 发送 ----------
@@ -71,12 +76,19 @@ class Bot:
             log.exception("发送失败")
             return False
 
+    def say(self, uid, text):
+        """发送并记入聊天历史（让模型知道自己说过什么）。"""
+        if self.send(uid, text):
+            records.add_chat(uid, "assistant", text)
+            return True
+        return False
+
     def with_quiet_notice(self, uid, text):
         """如果这是推送窗口关闭前最后一条能送达的提醒，附上一句说明（每次沉默只附一次）。"""
         deadline = self.channel.push_deadline(uid)
         if not deadline or now() > deadline:
             return text
-        nxt = next_daily_push(now())
+        nxt = reminders.next_push_time(uid, now())
         key = f"quiet_notice:{uid}"
         if nxt and nxt > deadline and kv_get(key) != deadline.isoformat():
             kv_set(key, deadline.isoformat())
@@ -88,8 +100,7 @@ class Bot:
         - 有 nudge：全文暂存，等她下次说话时补发；若通道支持兜底（测试号模板消息），再发一句提示。
         - 没有 nudge：尝试用兜底方式发全文（内容会被截短）。"""
         text = self.with_quiet_notice(uid, text)
-        if self.send(uid, text):
-            records.add_chat(uid, "assistant", text)
+        if self.say(uid, text):
             return True
         if nudge:
             records.add_pending(uid, text, keep_hours)
@@ -102,19 +113,36 @@ class Bot:
 
     def deliver_pending(self, uid):
         for text in records.take_pending(uid):
-            if self.send(uid, text):
-                records.add_chat(uid, "assistant", text)
+            self.say(uid, text)
+
+    # ---------- 自我介绍 ----------
+    def introduce(self, uid, ask_name=True):
+        for text in INTRO:
+            self.say(uid, text)
+        if uid == self.admin_uid():
+            self.say(uid, ADMIN_GUIDE)
+        if ask_name:
+            self.say(uid, INTRO_ASK_NAME)
+        kv_set(f"intro:{uid}", INTRO_VERSION)
 
     def welcome(self, uid):
-        if self.send(uid, WELCOME):
-            records.add_chat(uid, "assistant", WELCOME)
+        """测试号的「关注」事件：直接做自我介绍。"""
+        records.ensure_user(uid)
+        self.introduce(uid)
+
+    def guide(self, uid):
+        self.send(uid, FEATURE_GUIDE)
+        if uid == self.admin_uid():
+            self.send(uid, ADMIN_GUIDE)
 
     # ---------- 接收 ----------
     def build_system(self, uid):
         p = records.get_profile(uid)
-        info = {k: v for k, v in p.items() if k not in ("user_id", "updated_at") and v is not None}
-        info_txt = json.dumps(info, ensure_ascii=False) if info else "（还没有资料）"
-        return f"{SYSTEM_PROMPT}\n\n现在是北京时间{llm.now_text()}。\n已保存的用户资料：{info_txt}"
+        skip = ("user_id", "updated_at", "prefs", "weigh_reminder")
+        info = {k: v for k, v in p.items() if k not in skip and v is not None}
+        info["口味与忌口"] = records.get_prefs(uid)
+        return (f"{SYSTEM_PROMPT}\n\n现在是北京时间{llm.now_text()}（{'一二三四五六日'[now().weekday()]}）。\n"
+                f"已保存的用户资料：{json.dumps(info, ensure_ascii=False)}")
 
     def handle_command(self, uid, cmd):
         """内置指令，返回 True 表示已处理。"""
@@ -123,20 +151,24 @@ class Bot:
             "开启称重提醒": ("weigh", True, "好的，每周日早上会轻轻提醒一下～"),
             "关闭提醒": ("all", False, "好的，不会再主动打扰你啦。想恢复的话发「开启提醒」就行，"
                                     "平时直接找我聊天、记录饮食也都可以。"),
-            "开启提醒": ("all", True, "好的，提醒已经开启～"),
+            "开启提醒": ("all", True, "好的，提醒已经开启～ 发「我的提醒设置」可以看看都有哪些提醒。"),
         }
         if cmd == "清除数据":
             records.clear_user_data(uid)
-            self.send(uid, "好的，你的资料、饮食、运动、体重记录和聊天记录都已经删除了，提醒也先关掉了。"
-                           "想重新开始的话，发「开启提醒」就行。")
+            self.send(uid, "好的，你的资料、饮食、运动、体重、喝水记录、提醒设置和聊天记录都已经删除了，"
+                           "提醒也先关掉了。想重新开始的话，发「开启提醒」就行。")
             return True
         if cmd in replies:
             kind, enabled, text = replies[cmd]
             records.set_reminders_flag(uid, enabled, kind)
             self.send(uid, text)
             return True
-        if cmd in ("帮助", "help", "/help"):
-            self.send(uid, HELP)
+        if cmd in GUIDE_CMDS:
+            self.guide(uid)
+            return True
+        if cmd in ("我的提醒设置", "提醒设置", "查看提醒"):
+            self.send(uid, "你现在的提醒：\n" + reminders.describe(uid) +
+                      "\n\n想改就直接说，比如「早饭提醒改到9点」「周末不用提醒」「开启睡前小结」。")
             return True
         is_admin = uid == self.admin_uid()
         if cmd == "#status" and is_admin:
@@ -146,31 +178,35 @@ class Bot:
             kv_set("alert:test", "")
             self.alert("test", "这是一条测试告警，能看到说明告警通道正常。", cooldown_hours=0)
             return True
+        if cmd == "#test intro":
+            self.introduce(uid, ask_name=False)
+            return True
         if cmd.startswith("#test"):
             parts = cmd.split()
             name = parts[1] if len(parts) > 1 else ""
-            jobs = {
-                "morning": lambda: morning_job(self, uid),
-                "breakfast": lambda: meal_job(self, "breakfast", uid),
-                "lunch": lambda: meal_job(self, "lunch", uid),
-                "dinner": lambda: meal_job(self, "dinner", uid),
-                "water": lambda: water_job(self, uid),
-                "weigh": lambda: weigh_job(self, uid),
-                "weekly": lambda: weekly_job(self, uid),
-            }
-            if name in jobs:
-                jobs[name]()
+            if name in reminders.KINDS:
+                run_kind(self, uid, name, force=True)
             else:
-                self.send(uid, "可测试：" + " ".join(jobs))
+                self.send(uid, "可测试：" + " ".join(list(reminders.KINDS) + ["intro"]))
             return True
         return False
 
     def handle_text(self, uid, text):
         is_new = not records.get_profile(uid)
         records.ensure_user(uid)
+        cmd = text.strip()
         if is_new:
-            self.welcome(uid)
-        if self.handle_command(uid, text.strip()):
+            # 第一次说话：先自我介绍；只是打招呼就等她回答称呼，否则接着处理她说的事
+            greeting = bool(GREETING.match(cmd)) or not cmd
+            if greeting:
+                records.add_chat(uid, "user", text)   # 让聊天历史从她的招呼开始，模型知道自己问过称呼
+            self.introduce(uid, ask_name=greeting)
+            if greeting:
+                return
+        elif kv_get(f"intro:{uid}") != INTRO_VERSION:
+            self.say(uid, WHATS_NEW)
+            kv_set(f"intro:{uid}", INTRO_VERSION)
+        if self.handle_command(uid, cmd):
             return
         self.deliver_pending(uid)
         try:
@@ -198,95 +234,100 @@ class Bot:
         self.handle_text(uid, text)
 
 
-# ---------- 定时任务 ----------
-def targets(only=None):
-    if only:
-        return [records.get_profile(only) or {"user_id": only}]
-    from .db import run
-    return [dict(r) for r in run("SELECT * FROM profiles WHERE reminders=1", fetch=True)]
+# ---------- 各类主动推送（force=True 表示测试，跳过"已记录就不发"之类的判断）----------
+def morning(bot, uid, force=False):
+    p = records.get_profile(uid)
+    if not p.get("city"):
+        if force:
+            bot.push(uid, "还不知道你在哪个城市，告诉我就能每天早上给你发天气啦～")
+        return
+    weather = get_weather(p["city"], p.get("province") or "")
+    if weather.startswith(("天气接口出错", "没有找到城市")):
+        bot.alert("weather", f"早安天气查询失败：{weather[:150]}\n检查和风天气的 Key、API Host 和额度。", 24)
+        return
+    text = llm.write(MORNING_INSTR, weather)
+    bot.push(uid, text, nudge="早上好～今天的天气和提醒准备好啦，回我任意一句就能看到", keep_hours=5)
 
 
-def morning_job(bot, only=None):
-    for p in targets(only):
-        uid = p["user_id"]
-        try:
-            if not p.get("city"):
-                if only:
-                    bot.push(uid, "还不知道你在哪个城市，告诉我就能每天早上给你发天气啦～")
-                continue
-            weather = get_weather(p["city"], p.get("province") or "")
-            if weather.startswith(("天气接口出错", "没有找到城市")):
-                bot.alert("weather", f"早安天气查询失败：{weather[:150]}\n检查和风天气的 Key、API Host 和额度。", 24)
-                continue
-            text = llm.write(MORNING_INSTR, weather)
-            bot.push(uid, text, nudge="早上好～今天的天气和提醒准备好啦，回我任意一句就能看到", keep_hours=5)
-        except Exception as e:  # noqa: BLE001
-            log.exception("早安推送失败")
-            bot.alert("morning", f"早安推送出错：{type(e).__name__}: {str(e)[:150]}", 24)
+def meal(bot, uid, which, force=False):
+    if not force and records.has_meal(uid, now().strftime("%Y-%m-%d"), which):
+        return
+    bot.push(uid, random.choice(MEAL_PROMPTS[which]))
 
 
-def meal_job(bot, meal, only=None):
-    day = now().strftime("%Y-%m-%d")
-    for p in targets(only):
-        uid = p["user_id"]
-        if not only and records.has_meal(uid, day, meal):
-            continue
-        try:
-            bot.push(uid, random.choice(MEAL_PROMPTS[meal]))
-        except Exception:  # noqa: BLE001
-            log.exception("饮食询问推送失败")
+def water(bot, uid, force=False):
+    w = records.water_summary(uid)
+    total, goal = w["喝水合计毫升"], w["喝水目标毫升"]
+    if total >= goal and not force:
+        return   # 已经喝够了，不打扰
+    if total:
+        text = f"今天已经喝了大约 {w['约几杯']:g} 杯（{total}ml）啦，离 {goal}ml 还差一点，再来一杯吧～ 喝完跟我说一声我帮你记上。"
+    else:
+        text = random.choice(WATER)
+    bot.push(uid, text)
 
 
-def water_job(bot, only=None):
-    for p in targets(only):
-        try:
-            bot.push(p["user_id"], random.choice(WATER))
-        except Exception:  # noqa: BLE001
-            log.exception("喝水提醒推送失败")
-
-
-def weigh_job(bot, only=None):
+def weigh(bot, uid, force=False):
     since = (now().date() - datetime.timedelta(days=5)).isoformat()
-    from .db import run
-    for p in targets(only):
-        uid = p["user_id"]
-        if not only:
-            if not p.get("weigh_reminder", 1):
-                continue
-            if run("SELECT 1 FROM weights WHERE user_id=? AND day>=? LIMIT 1", (uid, since), fetch=True):
-                continue
-        try:
-            bot.push(uid, random.choice(WEIGH))
-        except Exception:  # noqa: BLE001
-            log.exception("称重提醒推送失败")
+    if not force and run("SELECT 1 FROM weights WHERE user_id=? AND day>=? LIMIT 1", (uid, since), fetch=True):
+        return
+    bot.push(uid, random.choice(WEIGH))
 
 
-def weekly_job(bot, only=None):
-    for p in targets(only):
-        uid = p["user_id"]
-        try:
-            stats = records.week_stats(uid)
-            if not stats["有记录的天数"] and not stats["运动天数"]:
-                if only:
-                    bot.push(uid, "这周还没有饮食或运动记录哦～先随手记一顿试试，有了记录我就能给你写小结啦。")
-                continue
-            text = llm.write(WEEKLY_INSTR, json.dumps(stats, ensure_ascii=False))
-            bot.push(uid, text, nudge="本周的小结写好啦，回我任意一句就能看到～", keep_hours=24 * 7)
-        except Exception:  # noqa: BLE001
-            log.exception("周总结推送失败")
+def weekly(bot, uid, force=False):
+    stats = records.week_stats(uid)
+    if not stats["有记录的天数"] and not stats["运动天数"]:
+        if force:
+            bot.push(uid, "这周还没有饮食或运动记录哦～先随手记一顿试试，有了记录我就能给你写小结啦。")
+        return
+    text = llm.write(WEEKLY_INSTR, json.dumps(stats, ensure_ascii=False))
+    bot.push(uid, text, nudge="本周的小结写好啦，回我任意一句就能看到～", keep_hours=24 * 7)
 
 
-# 时间表（北京时间）。想改时间就改这里。
-SCHEDULE = [
-    (morning_job, {"hour": 7, "minute": 0}, ()),
-    (weigh_job, {"day_of_week": "sun", "hour": 7, "minute": 30}, ()),
-    (meal_job, {"hour": 8, "minute": 30}, ("breakfast",)),
-    (water_job, {"hour": 10, "minute": 30}, ()),
-    (meal_job, {"hour": 12, "minute": 30}, ("lunch",)),
-    (water_job, {"hour": 15, "minute": 30}, ()),
-    (meal_job, {"hour": 19, "minute": 0}, ("dinner",)),
-    (weekly_job, {"day_of_week": "sun", "hour": 20, "minute": 30}, ()),
-]
+def monthly(bot, uid, force=False):
+    today = now().date()
+    if force:
+        month = today.strftime("%Y-%m")
+    else:   # 每月1号发上个月的
+        month = (today.replace(day=1) - datetime.timedelta(days=1)).strftime("%Y-%m")
+    stats = records.month_stats(uid, month)
+    if not stats.get("有饮食记录的天数") and not stats.get("运动天数"):
+        if force:
+            bot.push(uid, "这个月还没有饮食或运动记录哦，有了记录才能写月度小结～")
+        return
+    text = llm.write(MONTHLY_INSTR, json.dumps(stats, ensure_ascii=False))
+    bot.push(uid, text, nudge="上个月的小结写好啦，回我任意一句就能看到～", keep_hours=24 * 7)
+
+
+def night(bot, uid, force=False):
+    s = records.day_summary(uid)
+    if not s["饮食"] and not s["运动"] and not s["喝水"]:
+        if force:
+            bot.push(uid, "今天还没有记录哦，早点休息～")
+        return
+    bot.push(uid, llm.write(NIGHT_INSTR, json.dumps(s, ensure_ascii=False)))
+
+
+def run_kind(bot, uid, kind, force=False):
+    funcs = {"morning": morning, "water": water, "weigh": weigh, "weekly": weekly,
+             "monthly": monthly, "night": night}
+    try:
+        if kind in ("breakfast", "lunch", "dinner"):
+            meal(bot, uid, kind, force)
+        else:
+            funcs[kind](bot, uid, force)
+    except Exception as e:  # noqa: BLE001
+        log.exception("推送 %s 失败", kind)
+        if kind in ("morning", "weekly", "monthly"):
+            bot.alert(kind, f"{reminders.KINDS[kind]['name']}推送出错：{type(e).__name__}: {str(e)[:150]}", 24)
+
+
+def tick(bot):
+    """每分钟运行：给每个开着提醒的人，发到点的提醒。"""
+    users = [r["user_id"] for r in run("SELECT user_id FROM profiles WHERE reminders=1", fetch=True)]
+    for uid in users:
+        for kind, _slot in reminders.due(uid):
+            run_kind(bot, uid, kind)
 
 
 def balance_job(bot):
@@ -305,29 +346,12 @@ def balance_job(bot):
                              "用完后机器人就不能回复了，记得去 platform.deepseek.com 充值。", 24)
 
 
-# 只发给管理员的检查任务（不算在用户提醒里）
-ADMIN_SCHEDULE = [
-    (balance_job, {"hour": 9, "minute": 5}, ()),
-]
-
-
-def next_daily_push(after):
-    """SCHEDULE 里每天都有的推送中，after 之后的下一次时间。"""
-    slots = sorted({(w["hour"], w["minute"]) for _, w, _ in SCHEDULE if "day_of_week" not in w})
-    for day in (0, 1):
-        base = (after + datetime.timedelta(days=day)).replace(second=0, microsecond=0)
-        for h, m in slots:
-            t = base.replace(hour=h, minute=m)
-            if t > after + datetime.timedelta(minutes=1):
-                return t
-    return None
-
-
 def start_scheduler(bot):
     from apscheduler.schedulers.background import BackgroundScheduler
-
     s = BackgroundScheduler(timezone=str(config.TZ))
-    for func, when, args in SCHEDULE + ADMIN_SCHEDULE:
-        s.add_job(func, "cron", args=(bot, *args), misfire_grace_time=300, coalesce=True, **when)
+    kw = {"misfire_grace_time": 50, "coalesce": True, "max_instances": 1}
+    s.add_job(tick, "cron", args=(bot,), second=5, **kw)                 # 每分钟
+    s.add_job(balance_job, "cron", args=(bot,), hour=9, minute=5, **kw)
+    s.add_job(reminders.cleanup_log, "cron", hour=3, minute=30, **kw)
     s.start()
     return s

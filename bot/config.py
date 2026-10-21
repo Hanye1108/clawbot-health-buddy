@@ -76,6 +76,12 @@ ADMIN_OPENID = env("ADMIN_OPENID")
 # DeepSeek 余额低于多少元时提醒
 ALERT_BALANCE = float(env("ALERT_BALANCE", "5") or 5)
 
+# 趋势图/导出网页（可选）。PUBLIC_URL 是手机能访问到的地址，比如 http://你的公网IP 或 http://IP:端口
+PUBLIC_URL = env("PUBLIC_URL").rstrip("/")
+WEB_ENABLED = env("WEB_ENABLED", "1") == "1"
+WEB_PORT = int(env("WEB_PORT", "5000") or 5000)       # ClawBot 通道下网页监听的端口
+REPORT_LINK_HOURS = float(env("REPORT_LINK_HOURS", "24") or 24)
+
 # 公众号测试号（CHANNEL=mp 时才需要）
 WX_TOKEN = env("WX_TOKEN")
 WX_APPID = env("WX_APPID")

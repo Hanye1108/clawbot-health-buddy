@@ -124,6 +124,8 @@ class MpChannel(Channel):
                                  args=(uid, root.findtext("Content") or ""), daemon=True).start()
             return "success"
 
+        from ..web import register
+        register(app)
         return app
 
     def run(self):

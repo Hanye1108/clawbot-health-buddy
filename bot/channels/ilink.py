@@ -380,6 +380,7 @@ def login(name):
             print(f"\n✅ 登录成功，已保存到 {path}")
             print("返回的字段：", sorted(s.keys()))
             print("下一步：重启服务让它生效 → systemctl restart clawbot-health-buddy")
+            print("然后在微信里给 ClawBot 发一句「你好」，它会做自我介绍并说明所有功能。")
             return 0
         if status == "expired":
             print("二维码过期了，请重新运行")

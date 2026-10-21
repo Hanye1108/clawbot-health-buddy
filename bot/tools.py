@@ -2,8 +2,9 @@
 import json
 import logging
 
-from . import records
-from .records import MET
+from . import records, reminders
+from .records import MET, PREF_KINDS
+from .reminders import KINDS
 from .weather import get_weather
 
 log = logging.getLogger(__name__)
@@ -79,12 +80,47 @@ TOOLS = [
         "description": "获取最近7天的饮食、运动和体重统计，用来写周总结。",
         "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {
-        "name": "set_reminders",
-        "description": "开启或关闭定时提醒。kind=all 表示全部提醒（天气、饮食询问、喝水、称重），kind=weigh 只针对每周称重提醒。",
+        "name": "set_reminder",
+        "description": "修改提醒设置：开关、时间、哪几天。kind=all 是全部提醒的总开关（只能设 enabled）。只传要改的字段。",
         "parameters": {"type": "object", "properties": {
+            "kind": {"type": "string", "enum": ["all"] + list(KINDS.keys())},
             "enabled": {"type": "boolean"},
-            "kind": {"type": "string", "enum": ["all", "weigh"]}},
-            "required": ["enabled"]}}},
+            "times": {"type": "string", "description": "HH:MM，多个用逗号分开，如 09:00 或 10:00,15:00,17:30"},
+            "days": {"type": "string", "enum": ["all", "weekdays", "weekends",
+                                                 "mon", "tue", "wed", "thu", "fri", "sat", "sun"]}},
+            "required": ["kind"]}}},
+    {"type": "function", "function": {
+        "name": "get_reminders",
+        "description": "查看用户当前的全部提醒设置。",
+        "parameters": {"type": "object", "properties": {}}}},
+    {"type": "function", "function": {
+        "name": "update_preferences",
+        "description": "记录或删除用户的口味与忌口。",
+        "parameters": {"type": "object", "properties": {
+            "add": {"type": "object", "description": "要新增的条目，键为类别：喜欢、不吃、过敏或不耐受、饮食习惯；值为字符串数组",
+                    "properties": {k: {"type": "array", "items": {"type": "string"}} for k in PREF_KINDS}},
+            "remove": {"type": "array", "items": {"type": "string"}, "description": "要删除的条目原文"}}}}},
+    {"type": "function", "function": {
+        "name": "log_water",
+        "description": "记录一次喝水。",
+        "parameters": {"type": "object", "properties": {
+            "ml": {"type": "number", "description": "毫升，一杯按250，一瓶按500"},
+            "date": {"type": "string", "description": "日期 YYYY-MM-DD，默认今天"}},
+            "required": ["ml"]}}},
+    {"type": "function", "function": {
+        "name": "delete_water",
+        "description": "按编号删除一条喝水记录（编号可从 get_today_log 得到）。",
+        "parameters": {"type": "object", "properties": {
+            "water_id": {"type": "integer"}}, "required": ["water_id"]}}},
+    {"type": "function", "function": {
+        "name": "get_month_summary",
+        "description": "获取某个月（默认本月至今）的饮食、运动、体重、喝水统计，用来写月度小结。",
+        "parameters": {"type": "object", "properties": {
+            "month": {"type": "string", "description": "YYYY-MM，可选"}}}}},
+    {"type": "function", "function": {
+        "name": "get_report_link",
+        "description": "生成一个临时网页链接，可以看体重、热量、运动、喝水的趋势图，也可以下载全部记录（CSV表格）。",
+        "parameters": {"type": "object", "properties": {}}}},
 ]
 
 
@@ -110,11 +146,21 @@ def run_tool(uid, name, args):
             return json.dumps(records.day_summary(uid), ensure_ascii=False)
         if name == "get_week_summary":
             return json.dumps(records.week_stats(uid), ensure_ascii=False)
-        if name == "set_reminders":
-            kind = args.get("kind") or "all"
-            records.set_reminders_flag(uid, bool(args.get("enabled")), kind)
-            what = "称重提醒" if kind == "weigh" else "提醒"
-            return f"已开启{what}" if args.get("enabled") else f"已关闭{what}"
+        if name == "set_reminder":
+            return reminders.tool_set(uid, args)
+        if name == "get_reminders":
+            return reminders.describe(uid)
+        if name == "update_preferences":
+            return records.update_prefs(uid, args)
+        if name == "log_water":
+            return records.log_water(uid, args)
+        if name == "delete_water":
+            return records.delete_water(uid, args)
+        if name == "get_month_summary":
+            return json.dumps(records.month_stats(uid, args.get("month")), ensure_ascii=False)
+        if name == "get_report_link":
+            from . import web
+            return web.link_for_tool(uid)
     except Exception as e:  # noqa: BLE001 - 工具出错要告诉模型，而不是让整个回复失败
         log.exception("工具 %s 出错", name)
         return f"工具出错：{e}"

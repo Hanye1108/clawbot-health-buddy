@@ -27,6 +27,8 @@ def cmd_run():
         bot.channel = MpChannel(bot)
     elif config.CHANNEL == "ilink":
         bot.channel = IlinkChannel(bot)
+        from .web import serve_in_background
+        serve_in_background()
     else:
         raise SystemExit(f"CHANNEL 只能是 ilink 或 mp，现在是 {config.CHANNEL}")
     start_scheduler(bot)
@@ -97,6 +99,10 @@ def cmd_check():
             show(True, "能访问微信 iLink 服务器")
         except Exception as e:  # noqa: BLE001
             show(False, "能访问微信 iLink 服务器", str(e))
+
+    if config.WEB_ENABLED:
+        print(("ℹ️  趋势图网页对外地址：" + config.PUBLIC_URL) if config.PUBLIC_URL else
+              "ℹ️  没有配置 PUBLIC_URL，「看趋势图」功能不可用（可选，见 DEPLOY.md）")
 
     print("\n全部通过 🎉" if ok else "\n还有问题需要处理")
     return 0 if ok else 1

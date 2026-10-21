@@ -72,7 +72,7 @@ class AlertTest(DBTestCase):
         records.save_profile(HER, {"city": "某地"})
         with mock.patch("bot.core.get_weather", return_value="天气接口出错：401"), \
              mock.patch("bot.llm.write") as write:
-            core.morning_job(self.bot)
+            core.morning(self.bot, HER)
             write.assert_not_called()
         self.assertIn("401", self.to_admin()[0])
 

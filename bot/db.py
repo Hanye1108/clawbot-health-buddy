@@ -36,9 +36,26 @@ SCHEMA = [
         account_id TEXT, user_id TEXT, context_token TEXT, updated_at TEXT,
         PRIMARY KEY (account_id, user_id))""",
     "CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)",
+    """CREATE TABLE IF NOT EXISTS water (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, day TEXT, ml INTEGER, ts TEXT)""",
+    "CREATE INDEX IF NOT EXISTS idx_water ON water(user_id, day)",
+    """CREATE TABLE IF NOT EXISTS reminder_settings (
+        user_id TEXT, kind TEXT, enabled INTEGER, times TEXT, days TEXT,
+        PRIMARY KEY (user_id, kind))""",
+    """CREATE TABLE IF NOT EXISTS reminder_log (
+        user_id TEXT, kind TEXT, slot TEXT, PRIMARY KEY (user_id, kind, slot))""",
+    """CREATE TABLE IF NOT EXISTS report_links (
+        token TEXT PRIMARY KEY, user_id TEXT, expires_at TEXT)""",
 ]
 
-USER_TABLES = ("profiles", "chat", "meals", "exercises", "weights", "pending", "ilink_sessions")
+# 旧版本数据库升级时补的列
+MIGRATIONS = [
+    "ALTER TABLE profiles ADD COLUMN prefs TEXT",
+    "ALTER TABLE profiles ADD COLUMN water_goal_ml INTEGER",
+]
+
+USER_TABLES = ("profiles", "chat", "meals", "exercises", "weights", "pending", "ilink_sessions",
+               "water", "reminder_settings", "reminder_log", "report_links")
 
 
 def run(sql, args=(), fetch=False):
@@ -54,6 +71,14 @@ def init_db():
     config.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     for sql in SCHEMA:
         run(sql)
+    for sql in MIGRATIONS:
+        try:
+            run(sql)
+        except sqlite3.OperationalError:
+            pass  # 列已存在
+    # 旧版的「关闭称重提醒」迁移到新的提醒设置
+    run("INSERT OR IGNORE INTO reminder_settings (user_id, kind, enabled, times, days) "
+        "SELECT user_id, 'weigh', 0, '07:30', 'sun' FROM profiles WHERE weigh_reminder=0")
     try:
         os.chmod(config.DB_PATH, 0o600)
     except OSError:
