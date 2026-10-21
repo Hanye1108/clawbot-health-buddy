@@ -13,6 +13,13 @@ class Channel:
         """主动推送的截止时间（datetime）；没有这个限制就返回 None。"""
         return None
 
+    def admin_uid(self):
+        """管理员的用户 ID（用来接收告警）；没有就返回 None。"""
+        return None
+
+    def status_lines(self):
+        return []
+
     def run(self):
         raise NotImplementedError
 

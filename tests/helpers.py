@@ -37,6 +37,13 @@ class FakeChannel:
         return self.fallback_ok
 
     deadline = None
+    admin = None
 
     def push_deadline(self, uid):
         return self.deadline
+
+    def admin_uid(self):
+        return self.admin
+
+    def status_lines(self):
+        return ["通道正常"]

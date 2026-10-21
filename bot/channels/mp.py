@@ -70,6 +70,9 @@ class MpChannel(Channel):
             log.exception("模板消息异常")
             return False
 
+    def admin_uid(self):
+        return config.ADMIN_OPENID or None
+
     def check_signature(self, args):
         items = sorted([config.WX_TOKEN, args.get("timestamp", ""), args.get("nonce", "")])
         return hashlib.sha1("".join(items).encode()).hexdigest() == args.get("signature")

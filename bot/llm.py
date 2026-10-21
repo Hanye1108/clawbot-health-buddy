@@ -21,6 +21,19 @@ def client():
     return _client
 
 
+def get_balance():
+    """查询 DeepSeek 账户余额（官方接口 GET /user/balance）。"""
+    import requests
+    r = requests.get(config.DEEPSEEK_BASE_URL.rstrip("/") + "/user/balance",
+                     headers={"Authorization": f"Bearer {config.DEEPSEEK_KEY}"}, timeout=10)
+    r.raise_for_status()
+    data = r.json()
+    infos = data.get("balance_infos") or [{}]
+    info = next((i for i in infos if i.get("currency") == "CNY"), infos[0])
+    return {"available": bool(data.get("is_available")),
+            "total": info.get("total_balance", "?"), "currency": info.get("currency", "")}
+
+
 def now_text():
     return now().strftime("%Y年%m月%d日 %H:%M")
 

@@ -153,6 +153,21 @@ class Account:
         except Exception as e:  # noqa: BLE001
             log.debug("[%s] 输入状态发送失败：%s", self.name, e)
 
+    # ---------- 出问题时通知管理员 ----------
+    def report_expired(self):
+        log.error("[%s] 登录已过期，需要重新扫码：python -m bot login %s", self.name, self.name)
+        own = self.name == config.ADMIN_ACCOUNT
+        self.bot.alert(f"expired:{self.name}",
+                       f"账号「{self.name}」的 ClawBot 登录过期了，这个账号现在收不到消息。\n"
+                       f"在服务器上重新扫码：\ncd {config.ROOT} && .venv/bin/python -m bot login {self.name}\n"
+                       "然后 systemctl restart clawbot-health-buddy", cooldown_hours=24, keep=not own)
+
+    def report_poll_failures(self, fails, detail):
+        if fails >= 10:
+            self.bot.alert(f"poll:{self.name}",
+                           f"账号「{self.name}」连接微信服务器已连续失败 {fails} 次（{detail}）。"
+                           "如果持续出现，检查服务器网络。", cooldown_hours=6)
+
     def poll_forever(self):
         key = f"ilink_cursor:{self.bot_id}"
         buf = kv_get(key, "")
@@ -166,17 +181,19 @@ class Account:
             except Exception as e:  # noqa: BLE001
                 fails += 1
                 log.warning("[%s] 拉取消息出错（第%d次）：%s", self.name, fails, e)
+                self.report_poll_failures(fails, f"{type(e).__name__}: {str(e)[:120]}")
                 time.sleep(30 if fails >= 3 else 5)
                 continue
             code = resp.get("errcode") or resp.get("ret") or 0
             if code == -14:
-                log.error("[%s] 登录已过期，需要重新扫码：python -m bot login %s", self.name, self.name)
+                self.report_expired()
                 time.sleep(300)
                 continue
             if code:
                 fails += 1
-                log.warning("[%s] 接口返回错误：%s", self.name,
-                            {k: v for k, v in resp.items() if k not in ("msgs", "get_updates_buf")})
+                brief = {k: v for k, v in resp.items() if k not in ("msgs", "get_updates_buf")}
+                log.warning("[%s] 接口返回错误：%s", self.name, brief)
+                self.report_poll_failures(fails, str(brief)[:120])
                 time.sleep(30 if fails >= 3 else 5)
                 continue
             fails = 0
@@ -288,6 +305,26 @@ class IlinkChannel(Channel):
         except Exception as e:  # noqa: BLE001
             log.warning("[%s] 发送异常：%s", acc.name, e)
             return False
+
+    def admin_uid(self):
+        for acc in self.accounts.values():
+            if acc.name == config.ADMIN_ACCOUNT and acc.owner:
+                return acc.owner
+        return None
+
+    def status_lines(self):
+        lines = []
+        for acc in self.accounts.values():
+            rows = run("SELECT updated_at FROM ilink_sessions WHERE account_id=? "
+                       "ORDER BY updated_at DESC LIMIT 1", (acc.bot_id,), fetch=True)
+            if not rows:
+                lines.append(f"「{acc.name}」：还没收到过消息")
+                continue
+            last = datetime.datetime.fromisoformat(rows[0]["updated_at"])
+            hours = (now() - last).total_seconds() / 3600
+            window = "可以主动推送" if hours < config.ILINK_PUSH_WINDOW_HOURS else "已过推送窗口，等对方说话"
+            lines.append(f"「{acc.name}」：{hours:.1f} 小时前收到最后一条消息，{window}")
+        return lines
 
     def run(self):
         if not self.accounts:

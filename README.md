@@ -69,6 +69,7 @@ systemctl start clawbot-health-buddy    # 启动
 直接说话就行：「午饭吃了一碗牛肉面」「今天 108 斤」「跑步 30 分钟」「这周总结」「明天要带伞吗」，或者拍一张饭菜照片。
 
 内置指令：`关闭提醒` `开启提醒` `关闭称重提醒` `开启称重提醒` `清除数据` `帮助`
+管理员指令：`#status` 查看运行状态和 DeepSeek 余额，`#test alert` 测试告警（出问题时会自动通知管理员，见 DEPLOY.md）
 测试指令（立即触发一次推送）：`#test morning|breakfast|lunch|dinner|water|weigh|weekly`
 
 ## 项目结构

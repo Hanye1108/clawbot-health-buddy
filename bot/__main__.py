@@ -65,6 +65,13 @@ def cmd_check():
             show(False, f"DeepSeek 对话模型（{config.MODEL}）",
                  f"{e}\n   检查 DEEPSEEK_KEY 是否正确、账户是否有余额、模型名是否仍可用")
 
+        try:
+            from .llm import get_balance
+            bal = get_balance()
+            show(bal["available"], f"DeepSeek 余额：{bal['total']} {bal['currency']}", "余额不足，去 platform.deepseek.com 充值")
+        except Exception as e:  # noqa: BLE001
+            show(False, "DeepSeek 余额查询", str(e))
+
     if config.QWEATHER_KEY and config.QWEATHER_HOST:
         try:
             from .weather import lookup_city
@@ -80,6 +87,11 @@ def cmd_check():
         accs = load_accounts()
         show(bool(accs), f"已绑定 ClawBot 账号：{', '.join(a['_name'] for a in accs) or '无'}",
              "运行 python -m bot login me 扫码绑定")
+        if accs:
+            names = [a["_name"] for a in accs]
+            show(config.ADMIN_ACCOUNT in names, f"告警接收账号：{config.ADMIN_ACCOUNT}",
+                 f"没有名为 {config.ADMIN_ACCOUNT} 的账号，出问题时只会写日志。把 .env 里的 ADMIN_ACCOUNT 改成 "
+                 f"{'/'.join(names)} 之一")
         try:
             requests.get(config.ILINK_BASE_URL, timeout=10)
             show(True, "能访问微信 iLink 服务器")

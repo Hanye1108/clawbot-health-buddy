@@ -68,6 +68,14 @@ ILINK_ONLY_OWNER = env("ILINK_ONLY_OWNER", "1") == "1"
 # 超过这个小时数就不再尝试主动发送（暂存起来，等她下次说话时补发）。
 ILINK_PUSH_WINDOW_HOURS = float(env("ILINK_PUSH_WINDOW_HOURS", "23") or 23)
 
+# 管理员告警：出问题时（登录过期、DeepSeek 连续失败、余额不足……）发消息通知谁
+# ilink 通道填管理员自己那个 ClawBot 账号的名字（就是 python -m bot login 后面写的名字）
+ADMIN_ACCOUNT = env("ADMIN_ACCOUNT", "me")
+# mp 通道填管理员的公众号 openid（日志里能看到）
+ADMIN_OPENID = env("ADMIN_OPENID")
+# DeepSeek 余额低于多少元时提醒
+ALERT_BALANCE = float(env("ALERT_BALANCE", "5") or 5)
+
 # 公众号测试号（CHANNEL=mp 时才需要）
 WX_TOKEN = env("WX_TOKEN")
 WX_APPID = env("WX_APPID")
