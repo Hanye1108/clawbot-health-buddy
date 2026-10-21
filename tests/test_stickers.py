@@ -112,3 +112,22 @@ class IlinkImageTest(DBTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SortTest(DBTestCase):
+    def test_sort_inbox(self):
+        inbox = config.STICKERS_DIR / stickers.INBOX
+        inbox.mkdir(parents=True)
+        (inbox / "a.png").write_bytes(PNG)
+        (inbox / "b.png").write_bytes(PNG + b"1")
+        (inbox / "c.png").write_bytes(PNG + b"2")
+        (inbox / "d.png").write_bytes(PNG + b"3")
+        (inbox / "readme.txt").write_text("x")
+        answers = iter([("开心", "笑"), ("委屈", "瘪嘴"), ("不合适", "广告"), ("../坏", "注入")])
+        with mock.patch("bot.stickers.classify", side_effect=lambda data, moods: next(answers)):
+            done, bad = stickers.sort_inbox(print_=lambda *a: None)
+        self.assertEqual((done, bad), (2, 2))
+        self.assertTrue((config.STICKERS_DIR / "开心" / "a.png").exists())
+        self.assertTrue((config.STICKERS_DIR / "委屈" / "b.png").exists())
+        self.assertEqual(len(list((config.STICKERS_DIR / stickers.UNSORTED).iterdir())), 2)
+        self.assertEqual(stickers.load().keys(), {"开心", "委屈"})   # _开头的文件夹不算心情

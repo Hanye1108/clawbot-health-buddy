@@ -166,6 +166,9 @@ def main(argv=None):
     lp = sub.add_parser("login", help="扫码绑定微信 ClawBot")
     lp.add_argument("name", nargs="?", default="me", help="给这个账号起的名字，如 me、her")
     sub.add_parser("accounts", help="列出已绑定的账号")
+    sp = sub.add_parser("stickers", help="表情包：sort 自动分类 stickers/_待分类/ 里的图片")
+    sp.add_argument("action", choices=["sort", "list"])
+    sp.add_argument("--no-new", action="store_true", help="只分到已有的心情文件夹，不新建心情")
     a = p.parse_args(argv)
 
     if a.cmd == "check":
@@ -175,6 +178,18 @@ def main(argv=None):
         return login(a.name)
     if a.cmd == "accounts":
         return cmd_accounts()
+    if a.cmd == "stickers":
+        from . import stickers
+        if a.action == "sort":
+            if not config.DEEPSEEK_KEY:
+                raise SystemExit("需要先在 .env 填 DEEPSEEK_KEY（用看图模型分类）")
+            done, bad = stickers.sort_inbox(allow_new=not a.no_new)
+            print(f"\n分好 {done} 张，无法分类 {bad} 张（在 stickers/{stickers.UNSORTED}/，可手动挪）。")
+            print("分错的直接在文件夹之间挪动就行。完成后在微信里发 #reload 生效。")
+        lib = stickers.load()
+        for mood, files in lib.items():
+            print(f"{mood}：{len(files)} 张")
+        return 0
     cmd_run()
     return 0
 
