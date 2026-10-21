@@ -1,5 +1,6 @@
 """和风天气（新版 v1 接口：先用城市搜索拿经纬度，再按经纬度查天气）。"""
 import json
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
@@ -27,14 +28,22 @@ def _brief(period):
     }
 
 
+_city_cache = {}
+_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="weather")
+
+
 def lookup_city(city, province=""):
+    key = (city, province)
+    if key in _city_cache:          # 城市坐标不会变，查过一次就记住
+        return _city_cache[key]
     params = {"location": city, "range": "cn", "number": 1}
     if province:
         params["adm"] = province
     geo = qw_get("/geo/v2/city/lookup", params)
     if geo.get("code") != "200" or not geo.get("location"):
         return None
-    return geo["location"][0]
+    _city_cache[key] = geo["location"][0]
+    return _city_cache[key]
 
 
 def get_weather(city, province=""):
@@ -43,8 +52,10 @@ def get_weather(city, province=""):
         return f"没有找到城市：{province}{city}"
     lat, lon = round(float(loc["lat"]), 2), round(float(loc["lon"]), 2)
 
-    now = qw_get(f"/weather/v1/current/{lat}/{lon}", {"localTime": "true"})
-    fc = qw_get(f"/weather/v1/daily/{lat}/{lon}", {"days": 3, "localTime": "true"})
+    # 实时天气和预报同时查，省一次网络往返
+    f_now = _pool.submit(qw_get, f"/weather/v1/current/{lat}/{lon}", {"localTime": "true"})
+    f_fc = _pool.submit(qw_get, f"/weather/v1/daily/{lat}/{lon}", {"days": 3, "localTime": "true"})
+    now, fc = f_now.result(), f_fc.result()
     if "condition" not in now:
         return "天气接口出错：" + json.dumps(now, ensure_ascii=False)[:200]
 

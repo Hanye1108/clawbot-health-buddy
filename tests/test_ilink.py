@@ -61,6 +61,7 @@ class DispatchTest(DBTestCase):
                                   "ilink_user_id": "owner@im.wechat"}, self.bot)
         # 同步执行，方便断言
         self.acc.worker = mock.Mock(submit=lambda f, *a: f(*a))
+        self.acc.typing = mock.Mock()
 
     def msg(self, uid="owner@im.wechat", items=None, mid="1", ctx="ctx1"):
         return {"message_type": 1, "message_id": mid, "from_user_id": uid, "context_token": ctx,
@@ -74,6 +75,17 @@ class DispatchTest(DBTestCase):
         self.acc.dispatch(self.msg(mid="2", ctx="ctx2"))
         rows = run("SELECT * FROM ilink_sessions", fetch=True)
         self.assertEqual((len(rows), rows[0]["context_token"]), (1, "ctx2"))
+
+    def test_typing_shown_then_cleared(self):
+        self.acc.dispatch(self.msg())
+        calls = self.acc.typing.call_args_list
+        self.assertEqual(calls[0].args, ("owner@im.wechat", "ctx1", True))
+        self.assertEqual(calls[-1].args, ("owner@im.wechat", "ctx1", False))
+
+    def test_typing_failure_does_not_break_reply(self):
+        acc = ilink.Account({"_name": "x", "bot_token": "t", "ilink_bot_id": "b"}, self.bot)
+        with mock.patch.object(ilink.Account, "post", side_effect=RuntimeError("boom")):
+            acc.typing("u", "ctx", True)   # 不抛异常即可
 
     def test_duplicates_and_bot_messages_ignored(self):
         self.acc.dispatch(self.msg())

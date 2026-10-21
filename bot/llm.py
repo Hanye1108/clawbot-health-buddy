@@ -2,6 +2,7 @@
 import base64
 import json
 import logging
+import time
 
 from . import config
 from .db import now
@@ -27,21 +28,30 @@ def now_text():
 def chat(messages, tools, run_tool, fallback="我查得有点久，请再说一次吧。"):
     """多轮工具调用，直到模型给出最终文字回复。"""
     messages = list(messages)
-    for _ in range(MAX_TOOL_ROUNDS):
-        resp = client().chat.completions.create(
-            model=config.MODEL, messages=messages, tools=tools, timeout=60)
-        msg = resp.choices[0].message
-        if not msg.tool_calls:
-            return msg.content or fallback
-        messages.append(msg)
-        for call in msg.tool_calls:
-            try:
-                args = json.loads(call.function.arguments or "{}")
-            except ValueError:
-                args = {}
-            result = run_tool(call.function.name, args)
-            messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
-    return fallback
+    start = time.monotonic()
+    timing = []
+    try:
+        for _ in range(MAX_TOOL_ROUNDS):
+            t = time.monotonic()
+            resp = client().chat.completions.create(
+                model=config.MODEL, messages=messages, tools=tools, timeout=60)
+            timing.append(f"模型{time.monotonic() - t:.1f}s")
+            msg = resp.choices[0].message
+            if not msg.tool_calls:
+                return msg.content or fallback
+            messages.append(msg)
+            for call in msg.tool_calls:
+                try:
+                    args = json.loads(call.function.arguments or "{}")
+                except ValueError:
+                    args = {}
+                t = time.monotonic()
+                result = run_tool(call.function.name, args)
+                timing.append(f"{call.function.name}{time.monotonic() - t:.1f}s")
+                messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
+        return fallback
+    finally:
+        log.info("回复耗时 %.1fs：%s", time.monotonic() - start, " → ".join(timing))
 
 
 def write(instruction, data):
@@ -71,6 +81,7 @@ def analyze_photo(data, mime=None):
         return {"错误": "图片太大"}
     mime = mime if (mime or "").startswith("image/") else guess_mime(data)
     b64 = base64.b64encode(data).decode()
+    t = time.monotonic()
     resp = client().chat.completions.create(
         model=config.VISION_MODEL,
         messages=[{"role": "user", "content": [
@@ -78,6 +89,7 @@ def analyze_photo(data, mime=None):
             {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
         ]}],
         timeout=90)
+    log.info("看图耗时 %.1fs（图片 %dKB）", time.monotonic() - t, len(data) // 1024)
     raw = (resp.choices[0].message.content or "").strip()
     start, end = raw.find("{"), raw.rfind("}")
     try:

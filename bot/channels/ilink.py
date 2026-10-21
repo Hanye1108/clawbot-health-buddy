@@ -109,6 +109,7 @@ class Account:
         self.bot = bot
         self.worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"ilink-{self.name}")
         self.seen = []
+        self.tickets = {}
 
     def post(self, path, body, timeout=15):
         raw = json.dumps({**body, "base_info": {"channel_version": CHANNEL_VERSION}},
@@ -129,6 +130,28 @@ class Account:
                 log.warning("[%s] 发送失败：%s", self.name, resp)
                 return False
         return True
+
+    # ---------- "对方正在输入…" ----------
+    def _typing_ticket(self, uid, context_token):
+        cached = self.tickets.get(uid)
+        if cached and time.time() - cached[1] < 12 * 3600:
+            return cached[0]
+        resp = self.post("ilink/bot/getconfig", {"ilink_user_id": uid, "context_token": context_token})
+        ticket = resp.get("typing_ticket")
+        if ticket:
+            self.tickets[uid] = (ticket, time.time())
+        return ticket
+
+    def typing(self, uid, context_token, on):
+        """尽力而为：失败不影响正常回复。"""
+        try:
+            ticket = self._typing_ticket(uid, context_token)
+            if ticket:
+                self.post("ilink/bot/sendtyping",
+                          {"ilink_user_id": uid, "typing_ticket": ticket, "status": 1 if on else 2},
+                          timeout=5)
+        except Exception as e:  # noqa: BLE001
+            log.debug("[%s] 输入状态发送失败：%s", self.name, e)
 
     def poll_forever(self):
         key = f"ilink_cursor:{self.bot_id}"
@@ -182,9 +205,25 @@ class Account:
                 "VALUES (?,?,?,?) ON CONFLICT(account_id, user_id) DO UPDATE SET "
                 "context_token=excluded.context_token, updated_at=excluded.updated_at",
                 (self.bot_id, uid, ctx, now_iso()))
-        self.worker.submit(self._handle, uid, msg.get("item_list") or [])
+        self.worker.submit(self._handle, uid, msg.get("item_list") or [], ctx)
 
-    def _handle(self, uid, items):
+    def _handle(self, uid, items, ctx=""):
+        stop = threading.Event()
+        if ctx:
+            def keep_typing():
+                # 回复生成较慢时，每 5 秒续一次"正在输入"
+                while not stop.is_set():
+                    self.typing(uid, ctx, True)
+                    stop.wait(5)
+            threading.Thread(target=keep_typing, daemon=True).start()
+        try:
+            self._handle_items(uid, items)
+        finally:
+            stop.set()
+            if ctx:
+                self.typing(uid, ctx, False)
+
+    def _handle_items(self, uid, items):
         try:
             texts, image = [], None
             for it in items:
