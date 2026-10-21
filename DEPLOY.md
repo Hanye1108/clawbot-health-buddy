@@ -1,257 +1,40 @@
-# 部署指南：从一台干净的服务器到微信里能聊天
+# 部署指南
 
-这份文档写给两类读者：
+把这个健康小助手部署起来，让它出现在你的微信里。有两种方式，选一种：
 
-- **AI 部署助手**（Claude Code、Cursor 等能在服务器上执行命令的 AI）：把整个文件交给它，它可以照着一步一步做完。
-- **新手**：不懂原理也没关系，按顺序复制命令即可。
+| | 🖥 云服务器 | 🔌 ARM 开发板 |
+|---|---|---|
+| 适合 | 已经有一台云服务器（阿里云、腾讯云等） | 想要一个放在家里、几乎不花电费的小盒子 |
+| 花费 | 服务器月租 | 一次性买板子（百元左右）+ 电费可忽略 |
+| 稳定性 | 高，一直在线 | 断电、断网时会停，恢复后自动重连 |
+| 公网 IP / 端口 | **都不需要**（趋势图网页这个可选功能除外） | **都不需要**，放在家里路由器后面就行 |
+| 文档 | 👉 [docs/deploy-server.md](docs/deploy-server.md) | 👉 [docs/deploy-arm.md](docs/deploy-arm.md) |
 
-全程大约 30 分钟，其中大部分时间花在注册账号上。
+两种方式装好以后，**填密钥、绑定微信、测试、修改人设、日常维护**的步骤完全一样，见 👉 [docs/after-deploy.md](docs/after-deploy.md)。
 
----
-
-## 给 AI 部署助手的规则（请先读）
-
-1. **按章节顺序执行**，每一节末尾都有「✅ 检查点」。检查点没通过就停下，先看本文末尾的「常见问题」，不要跳过。
-2. **密钥绝不经过聊天。** 不要让用户把 API Key 发给你，也不要把 `.env` 的内容打印出来。让用户自己在服务器上编辑 `.env`（第 5 节），你只用 `python -m bot check` 验证结果。
-3. **以下事情只能由人来做**，到了这一步就停下来告诉用户怎么做，等用户确认：
-   - 注册 DeepSeek / 和风天气账号、充值、复制密钥（第 1、2 节）
-   - 用手机微信扫码（第 7 节）
-4. 默认安装目录是 `/opt/clawbot-health-buddy`，需要 root 权限。所有命令都假设在这个目录里执行，除非另有说明。
-5. 每完成一节，用一句话告诉用户进展。
+全程大约 30 分钟，大部分时间花在注册账号上。
 
 ---
 
-## 0. 准备清单
+## 开始之前要准备的（两种方式都一样）
 
-| 需要的东西 | 说明 |
-|---|---|
-| 一台 Linux 服务器 | Ubuntu 20.04+ / Debian 11+ / CentOS 8+ 均可，1 核 1G 足够。**不需要域名、不需要备案、不需要开放任何端口**（服务器主动连微信，而不是微信来连服务器） |
-| 服务器能访问外网 | 需要访问 `ilinkai.weixin.qq.com`、`api.deepseek.com`、和风天气、GitHub（或镜像）、pip 源 |
-| 一个开了 ClawBot 的微信 | 手机微信 → 我 → 设置 → 插件，能看到「微信ClawBot」。看不到说明你的微信还没开放这个功能（腾讯在灰度推送），可以先用公众号测试号通道，见 [docs/MP_TEST_ACCOUNT.md](docs/MP_TEST_ACCOUNT.md) |
-| DeepSeek 账号 | 用于对话和看图，需少量充值 |
-| 和风天气账号 | 用于天气，免费额度够个人使用 |
+1. **一个能用「微信ClawBot」的微信**：手机微信 → 我 → 设置 → 插件，能看到「微信ClawBot」。
+   这是腾讯在 2026 年 3 月推出、正在灰度推送的功能，不是每个人都有。没有的话，可以先用公众号测试号通道，见 [docs/MP_TEST_ACCOUNT.md](docs/MP_TEST_ACCOUNT.md)（只能部署在有公网 IP 的服务器上）。
+2. **DeepSeek API Key**：打开 https://platform.deepseek.com 注册，充值少量金额（个人使用几十元能用很久），左侧「API keys」→ 创建，复制保存（`sk-` 开头，只显示一次）。聊天、看图、联网搜索都用这一个 Key。
+3. **和风天气 Key 和 API Host**：打开 https://console.qweather.com 注册（免费额度够用）。
+   - 「项目管理」→ 创建项目 → 添加凭据，**认证方式选 API KEY**，复制 Key（页面上的「凭据 ID」用不到）。
+   - 控制台「设置」页面里找到 **API Host**，形如 `xxxxxxxx.re.qweatherapi.com`，复制。
+   - ⚠️ 官方文档里的 `abcxyz.qweatherapi.com` 是示例，不能用。
 
----
-
-## 1. 申请 DeepSeek API Key（人来做）
-
-1. 打开 https://platform.deepseek.com ，注册登录。
-2. 充值少量金额（个人使用，几十元能用很久）。
-3. 左侧「API keys」→ 创建，复制保存（只显示一次）。
-
-✅ 检查点：手里有一串 `sk-` 开头的 Key。
+✅ 检查点：手里有 DeepSeek Key、和风天气 Key、和风天气 API Host 三样东西。**先别把它们发给任何人或任何 AI**，后面的配置向导会让你在机器上直接输入。
 
 ---
 
-## 2. 申请和风天气 Key 和 API Host（人来做）
+## 给 AI 部署助手的规则（把文档交给 AI 代为部署时，请 AI 先读）
 
-1. 打开 https://console.qweather.com ，注册登录。
-2. 「项目管理」→ 创建项目 → 添加凭据，**认证方式选 API KEY**，复制 Key。
-   - 页面上还会出现「凭据 ID」，本项目用不到。
-3. 打开控制台的「设置」页面，找到 **API Host**，形如 `xxxxxxxxxx.re.qweatherapi.com`，复制。
-
-⚠️ 两个最常见的坑：
-- 官方文档里的 `abcxyz.qweatherapi.com` 是**示例**，不能用，一定要用设置页里你自己的。
-- 和风天气的旧版 v7 接口已对新账号停用，本项目用的是新版接口，不受影响。
-
-✅ 检查点：手里有一个 API Key 和一个 API Host。
-
----
-
-## 3. 下载代码到服务器
-
-```bash
-sudo -i
-cd /opt
-git clone https://github.com/Hanye1108/clawbot-health-buddy.git
-cd /opt/clawbot-health-buddy
-```
-
-> 国内服务器 clone GitHub 很慢或失败时：在自己电脑上下载仓库 ZIP，用 SFTP、宝塔或 1Panel 的文件管理上传到 `/opt` 再解压，目录名改成 `clawbot-health-buddy`。
-
-✅ 检查点：`ls /opt/clawbot-health-buddy` 能看到 `bot/`、`deploy/`、`DEPLOY.md`。
-
----
-
-## 4. 一键安装
-
-```bash
-cd /opt/clawbot-health-buddy
-bash deploy/install.sh            # 海外服务器
-bash deploy/install.sh --mirror   # 国内服务器（用清华 pip 镜像）
-```
-
-脚本会：安装 Python 和 venv → 安装依赖 → 生成 `.env` → 注册开机自启服务（先不启动）→ 设置每天凌晨 4 点自动备份数据库。可以重复运行，不会覆盖已有配置和数据。
-
-✅ 检查点：最后输出「✅ 安装完成」。
-
----
-
-## 5. 填写配置（人来做）
-
-```bash
-nano /opt/clawbot-health-buddy/.env
-```
-
-把第 1、2 节拿到的内容填进去（`Ctrl+O` 回车保存，`Ctrl+X` 退出）：
-
-```ini
-DEEPSEEK_KEY=sk-你的key
-QWEATHER_KEY=你的和风天气key
-QWEATHER_HOST=https://你自己的.re.qweatherapi.com
-CHANNEL=ilink
-```
-
-其余项保持默认即可。等号两边不要有空格，值不用加引号。
-
-> 给 AI 的提示：这一步请让用户自己操作，然后进入第 6 节验证。不要读取或打印 `.env`。
-
----
-
-## 6. 自检
-
-```bash
-cd /opt/clawbot-health-buddy
-.venv/bin/python -m bot check
-```
-
-✅ 检查点：除了「已绑定 ClawBot 账号」这一项（下一步才做），其他都是 ✅。
-
-| 失败项 | 处理 |
-|---|---|
-| 配置项 XXX | `.env` 里没填或拼错了 |
-| DeepSeek 对话模型 | Key 错误、余额不足，或模型名已变化（看 DeepSeek 官方文档，改 `.env` 里的 `DEEPSEEK_MODEL`） |
-| 和风天气 | Key 错、Host 错（见第 2 节的坑）、Host 少了 `https://`（程序会自动补，但拼写错就不行） |
-| 能访问微信 iLink 服务器 | 服务器出网受限，检查安全组/防火墙出方向规则 |
-
----
-
-## 7. 绑定微信 ClawBot（人来扫码）
-
-```bash
-cd /opt/clawbot-health-buddy
-.venv/bin/python -m bot login me
-```
-
-- 终端会打出一个二维码。**谁扫码，机器人就出现在谁的微信里。** 先用你自己的微信扫，测试没问题再给别人用（第 9 节）。
-- 终端二维码扫不出来：把终端窗口拉大，或复制终端里打印的链接，用任意二维码生成工具转成二维码再扫。
-- 扫码后在手机上确认。终端显示「✅ 登录成功」即可。
-- `me` 是给这个账号起的名字，凭据保存在 `data/ilink/me.json`（权限 600，只有 root 可读）。
-
-✅ 检查点：`.venv/bin/python -m bot accounts` 能列出 `me`。
-
----
-
-## 8. 启动并验证
-
-```bash
-systemctl start clawbot-health-buddy
-systemctl status clawbot-health-buddy --no-pager      # 应为 active (running)
-journalctl -u clawbot-health-buddy -n 30 --no-pager    # 应看到「已启动，通道：ilink」和「开始接收消息」
-```
-
-然后在手机微信里找到 ClawBot 的聊天，依次测试：
-
-| 发送 | 预期 |
-|---|---|
-| `你好` | 收到自我介绍：是谁、隐私说明、全部功能清单（管理员还会多收到一条管理员指令说明），然后进入新手引导，一项一项问称呼、性别年龄、身高体重、运动量、城市，每项都能回「跳过」，问完给出每日热量建议 |
-| `我在西安长安区，今天要带伞吗` | 返回真实天气（说明天气接口通了） |
-| （新手引导里按提示回答，或发 `重新填写资料`） | 保存资料并给出每日热量建议 |
-| `午饭吃了一碗牛肉面` | 估算热量并记录，告诉你今天合计 |
-| 发一张食物照片 | 识别食物、给出热量范围并追问一句 |
-| `快走了40分钟` | 估算运动消耗 |
-| `喝了一杯水` | 记录 250ml，告诉你今天喝了多少 |
-| `我不吃香菜，乳糖不耐` | 记住口味；之后问「晚饭吃什么」会避开 |
-| `早饭提醒改到9点` | 改提醒时间；发 `我的提醒设置` 查看全部提醒 |
-| `30秒后提醒我喝水` | 30 秒后收到「⏰ 喝水」；也可以「下午3点提醒我开会」「每天晚上9点提醒我吃维生素」，问「我设了哪些提醒」查看、可取消 |
-| `看看我的趋势图` | 发来一个网页链接（需要先完成第 10 节的「趋势图网页」配置，否则会说暂时看不了） |
-| `#test morning` | 立即触发一次早安天气推送（其他：`#test lunch`、`#test water`、`#test care`、`#test night`、`#test weigh`、`#test weekly`、`#test monthly`、`#test intro`） |
-| `清除数据` | 删除这个人的所有记录 |
-
-✅ 检查点：前四条都正常。照片如果失败，看第 11 节「已知问题」。
-
----
-
-## 9. 给家人/朋友用
-
-1. 让对方用**她自己的微信**扫码，给账号起另一个名字：
-   ```bash
-   .venv/bin/python -m bot login her
-   systemctl restart clawbot-health-buddy
-   ```
-2. 她在 ClawBot 里发一句话，就会收到自我介绍。
-3. **请当面说清楚**：这是 AI，热量是估算不是医嘱；聊天和健康记录存在你的服务器上，管理员技术上能看到（请承诺并做到不去看）；发「关闭提醒」可停止推送，发「清除数据」可删除全部记录。
-
-每个人的数据按微信身份分开存放，互不可见。
-
----
-
-## 10. 日常运维
-
-| 要做的事 | 命令 |
-|---|---|
-| 看实时日志 | `journalctl -u clawbot-health-buddy -f` |
-| 重启（改了 `.env` 或代码后） | `systemctl restart clawbot-health-buddy` |
-| 停止 | `systemctl stop clawbot-health-buddy` |
-| 更新代码 | `cd /opt/clawbot-health-buddy && git pull && .venv/bin/pip install -r requirements.txt && .venv/bin/python -m bot check && systemctl restart clawbot-health-buddy`（**每次都要装依赖**，新版本可能加了新包；先 check 再重启） |
-| 手动备份 | `bash deploy/backup.sh`（备份在 `data/backup/`，按星期保留 7 份） |
-| 从备份恢复 | `systemctl stop clawbot-health-buddy && cp data/backup/bot-3.db data/bot.db && systemctl start clawbot-health-buddy` |
-| ClawBot 登录过期（日志出现「需要重新扫码」） | `.venv/bin/python -m bot login me` 然后重启 |
-| 改提醒时间 | 每个人在微信里直接说就行（「早饭提醒改到9点」）；想改所有新用户的默认值，编辑 `bot/reminders.py` 顶部的 `KINDS`，然后重启 |
-| 改名字、性格、问候语、提醒文案 | 编辑项目根目录的 `persona.yaml`，只写想改的项（没有就 `cp deploy/persona.example.yaml persona.yaml`；全部可改项见 `bot/persona_default.yaml`），然后管理员在微信里发 `#reload` 立即生效，不用重启；改坏了会提示哪一行有问题并继续用旧的 |
-| 添加表情包 | 图片放进 `stickers/<心情>/`（如 `stickers/开心/`，png/jpg/gif/webp，单张 ≤2MB），管理员发 `#reload` 生效，回复里会列出识别到的心情。懒得分类就全部放进 `stickers/_待分类/`，运行 `.venv/bin/python -m bot stickers sort` 自动按心情分好。详见 `stickers/README.md` |
-| 查看运行状态 | 管理员在自己的 ClawBot 里发 `#status`：各账号最后收到消息的时间、推送窗口、DeepSeek 余额 |
-| 测试告警 | 管理员发 `#test alert`，应收到一条「⚠️ 小助手运行提醒」 |
-| 更新代码后 | 新版本可能加了依赖，运行 `.venv/bin/pip install -r requirements.txt`（国内加 `-i https://pypi.tuna.tsinghua.edu.cn/simple`）再重启 |
-
-### 出问题时会通知你
-
-`.env` 里 `ADMIN_ACCOUNT`（默认 `me`）对应的那个人就是管理员。下面这些情况会在管理员的 ClawBot 里收到一条「⚠️ 小助手运行提醒」，同类问题 6～24 小时内只提醒一次：
-
-- 某个账号的 ClawBot 登录过期（附重新扫码的命令）
-- 连接微信服务器连续失败 10 次
-- DeepSeek 对话连续失败 3 次 / 看图连续失败 2 次（常见原因：余额不足、Key 失效、模型名变化）
-- 每天 9:05 检查 DeepSeek 余额，低于 `ALERT_BALANCE` 元（默认 5）
-- 早安天气查询失败
-
-告警里不包含任何人的聊天内容。注意：告警也受「约 24 小时推送窗口」限制，管理员自己一天以上没和 ClawBot 说过话时，告警会暂存，等你下次发消息时一起收到。所以管理员最好也保持每天和自己的 ClawBot 说句话（比如回一下吃饭提醒）。
-
-### 默认提醒（每个人可以在聊天里自己改）
-
-07:00 早安天气、08:30 早餐、10:30 和 15:30 喝水（喝够了就不提醒）、12:30 午餐、19:00 晚餐、10:00–20:00 之间随机一次主动关心（避开其他提醒、她 1 小时内聊过就跳过）、周日 07:30 称重（5 天内记过就不提醒）、周日 20:30 周总结、每月 1 号 20:00 上月小结；21:30 睡前小结默认关闭。已经记录过的那一餐不会再问。
-
-### 趋势图网页（可选）
-
-她说「看看我的趋势图」或「导出我的数据」时，机器人会发一个临时链接（默认 24 小时有效，链接里带随机令牌），手机打开能看体重、热量、运动、喝水曲线，并下载全部记录（CSV）。需要让手机能访问到服务器上的网页服务（默认端口 `WEB_PORT=5000`），两种方式选一种：
-
-1. **直接开端口**：云服务器安全组放行 `5000` 端口（入方向 TCP），`.env` 里写 `PUBLIC_URL=http://你的公网IP:5000`。
-2. **走已有的 80 端口**（服务器上已有 Nginx/OpenResty、宝塔、1Panel 时）：加一个反向代理，把 `/r/` 转发到 `http://127.0.0.1:5000`，`.env` 里写 `PUBLIC_URL=http://你的公网IP`。1Panel：网站 → 创建网站 → 反向代理，主域名填公网 IP，代理地址填 `http://127.0.0.1:5000`。
-
-改完 `systemctl restart clawbot-health-buddy`，`python -m bot check` 会显示对外地址。注意：
-
-- 国内服务器请用 **IP**，不要用没备案的域名（会被云厂商拦截）。
-- 用 IP 访问是 HTTP，传输不加密；所以链接只有 24 小时有效，过期要重新要。可以用 `REPORT_LINK_HOURS` 调整。
-- 微信内置浏览器打开 IP 链接可能会提示风险或打不开，复制到手机浏览器打开即可。
-- 不需要这个功能就设 `WEB_ENABLED=0`。
-
----
-
-## 11. 常见问题
-
-| 现象 | 原因与处理 |
-|---|---|
-| 服务启动后马上退出，日志说「没有找到 ClawBot 账号」 | 还没做第 7 节 |
-| 微信里发消息没反应，日志有「忽略非扫码人的消息」 | 发消息的人和扫码的人对不上。如果确认是本人，在 `.env` 设 `ILINK_ONLY_OWNER=0` 后重启 |
-| 日志出现「登录已过期，需要重新扫码」 | 运行 `python -m bot login <名字>` 重新扫码，再重启服务 |
-| 回复「我刚刚走神了」 | 看日志里的报错：多半是 DeepSeek 余额不足、Key 失效或模型名变了 |
-| 天气查不到 | 跑一遍 `python -m bot check` 看和风天气那一项 |
-| 主动提醒收不到，但聊天正常 | 对方超过约 24 小时没给 ClawBot 发消息，微信就不允许主动推送了（见下方已知问题）。日志会提示「微信不允许主动发送，先暂存」；对方下次说话时，没送达的早安天气、周总结会自动补发 |
-| 照片识别失败 | 日志里看是「下载/解密失败」还是「图片识别失败」：前者是微信图片格式问题（见已知问题），后者检查 `VISION_MODEL` 是否是当前支持图片的模型名 |
-| `pip install` 很慢或超时 | 重新运行 `bash deploy/install.sh --mirror` |
-
-### 已知问题与限制
-
-- **主动推送只在对方最近约 24 小时内说过话时有效**：iLink 发消息要带对方最近消息里的 `context_token`。实测 12 小时内正常、24 小时后失效（[docs/PROGRESS.md](docs/PROGRESS.md)）。所以机器人会在窗口快关闭时附一句说明，之后安静等对方回来，回来后补发错过的天气和周总结。窗口小时数可在 `.env` 的 `ILINK_PUSH_WINDOW_HOURS` 调整。
-- **ClawBot 图片格式**：图片的下载和解密是按社区整理的协议文档实现的，还没有在真实环境里完整验证。如果失败，请在 Issue 里附上日志（日志不含密钥）。
-- **模型名**：DeepSeek 的模型名会随版本变化，`check` 报模型错误时以官方文档为准修改 `.env`。
-- **ClawBot 是腾讯的新功能**（2026 年 3 月上线），接口和规则以后可能调整，请遵守微信的使用规范。
+1. **先问用户选哪种方式**（服务器还是 ARM 开发板），然后只按对应的那份文档执行，再接着执行 `docs/after-deploy.md`。
+2. **按顺序执行**，每一节末尾都有「✅ 检查点」。没通过就停下，先看对应文档的「常见问题」，不要跳过。
+3. **密钥绝不经过聊天。** 不要让用户把 Key 发给你，不要读取或打印 `.env`。填密钥这一步请让用户自己运行 `python -m bot setup`（交互式，输入不显示），你只看 `python -m bot check` 的结果。
+4. **以下事情只能由人来做**，到了这一步就停下来告诉用户怎么做，等用户确认：注册账号、充值、复制密钥；运行 setup 填密钥；用手机微信扫码；（ARM）给板子刷系统、接网线。
+5. 默认安装目录 `/opt/clawbot-health-buddy`，需要 root 权限。
+6. 每完成一节，用一句话告诉用户进展。

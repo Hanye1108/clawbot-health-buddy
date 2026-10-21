@@ -1,6 +1,6 @@
 # clawbot-health-buddy · 微信 AI 健康小助手
 
-一个住在微信里的 AI 健康小助手：陪聊天、记录饮食/运动/体重、按时提醒喝水和吃饭、每天早上报天气、每周写一份温和的小结。由 DeepSeek 驱动，部署在你自己的服务器上。
+一个住在微信里的 AI 健康小助手：陪聊天、记录饮食/运动/体重、按时提醒喝水和吃饭、每天早上报天气、每周写一份温和的小结。由 DeepSeek 驱动，部署在你自己的服务器或家里的 ARM 开发板上。
 
 最初是给女朋友做的个人项目：希望它像一个贴心的朋友，而不是一个让人焦虑的计数器。
 
@@ -74,30 +74,34 @@ reply_max_chars: 120
 
 ## 快速开始
 
-完整步骤（适合直接交给 AI 部署助手执行）见 **[DEPLOY.md](DEPLOY.md)**。简要流程：
+两种部署方式，**服务器**或**百元级 ARM 开发板**（放在家里，不需要公网 IP），都是一条命令安装：
 
 ```bash
-cd /opt && git clone https://github.com/Hanye1108/clawbot-health-buddy.git && cd clawbot-health-buddy
-sudo bash deploy/install.sh --mirror    # 安装依赖、生成 .env、注册服务
-nano .env                               # 填 DeepSeek 和和风天气的 Key
-.venv/bin/python -m bot check           # 自检
-.venv/bin/python -m bot login me        # 用微信扫码绑定 ClawBot
-systemctl start clawbot-health-buddy    # 启动
+curl -fsSL https://raw.githubusercontent.com/Hanye1108/clawbot-health-buddy/main/deploy/bootstrap.sh | sudo bash -s -- --mirror
+cd /opt/clawbot-health-buddy && sudo .venv/bin/python -m bot setup   # 填密钥 → 自检 → 扫码绑定微信 → 启动
 ```
+
+| 文档 | 内容 |
+|---|---|
+| [DEPLOY.md](DEPLOY.md) | 总览：选哪种方式、要准备哪些账号（适合直接交给 AI 部署助手执行） |
+| [docs/deploy-server.md](docs/deploy-server.md) | 部署到云服务器 |
+| [docs/deploy-arm.md](docs/deploy-arm.md) | 部署到 ARM 开发板（选板子、刷系统、注意事项） |
+| [docs/after-deploy.md](docs/after-deploy.md) | 部署之后：填密钥、绑定微信、测试清单、修改人设、日常维护、常见问题 |
 
 ## 在微信里怎么用
 
 直接说话就行：「午饭吃了一碗牛肉面」「今天 108 斤」「跑步 30 分钟」「这周总结」「明天要带伞吗」，或者拍一张饭菜照片。
 
 内置指令：`关闭提醒` `开启提醒` `关闭称重提醒` `开启称重提醒` `清除数据` `帮助`
-管理员指令：`#status` 查看运行状态和 DeepSeek 余额，`#reload` 修改 persona.yaml 后立即生效，`#test alert` 测试告警（出问题时会自动通知管理员，见 DEPLOY.md）
+管理员指令：`#status` 查看运行状态和 DeepSeek 余额，`#reload` 修改 persona.yaml 后立即生效，`#test alert` 测试告警（出问题时会自动通知管理员，见 [docs/after-deploy.md](docs/after-deploy.md)）
 测试指令（立即触发一次推送）：`#test morning|breakfast|lunch|dinner|water|weigh|weekly`
 
 ## 项目结构
 
 ```
 bot/
-  __main__.py      命令行：run / check / login / accounts
+  __main__.py      命令行：run / setup / check / login / accounts / stickers
+  setup_wizard.py  配置向导：填密钥、自检、扫码绑定、启动
   config.py        读取 .env
   db.py            SQLite
   records.py       资料、热量计算、饮食/运动/体重记录与统计
@@ -117,8 +121,8 @@ bot/
   channels/
     ilink.py       微信 ClawBot 通道
     mp.py          公众号测试号通道
-deploy/            一键安装脚本、systemd 服务、备份脚本
-docs/              进展记录、测试号通道说明
+deploy/            一键安装（bootstrap.sh 下载 + install.sh 安装，自动适配 ARM）、systemd 服务、备份脚本
+docs/              部署文档（服务器 / ARM / 部署之后）、进展记录、测试号通道说明
 tests/             单元测试（python -m unittest，无需联网）
 ```
 

@@ -31,6 +31,8 @@
 | 表情包（ClawBot 发图片） | ✅ 已完成（待真实环境验证） | 自备图片按心情分文件夹；上传走 getuploadurl → AES 加密 → CDN → image_item |
 | 白天随机关心 | ✅ 已完成（待真实环境验证） | 每人每天的随机时间固定（按日期生成），避开其他提醒；1 小时内聊过就跳过；内容结合当天记录和最近聊天现写，不重复 |
 | 联网搜索 | ✅ 已完成（待真实环境验证） | DeepSeek 官方 Search API（2026-10-17 开放），同一个 Key，每 1000 次 5 元 |
+| 一键部署：服务器 / ARM 开发板 | ✅ 已完成（ARM 待真机验证） | bootstrap.sh 下载 + install.sh 自动适配架构、内存、时间 |
+| 配置向导 `python -m bot setup` | ✅ 已完成（模拟终端测试，待真实服务器验证） | 隐藏输入密钥 → 自检 → 扫码 → 启动 |
 
 ## 发展过程与关键决策
 
@@ -54,6 +56,7 @@
 18. **联网搜索与模型版本**：DeepSeek 在 2026-10-17 开放了官方 Search API，同一个 Key、国内可直连，所以直接用它做 web_search 工具，不用再找第三方。官方模型列表里只剩 deepseek-flash（V4.1-Flash）和 deepseek-v4-pro，deepseek-chat 已不在列表中；新模型默认开思考模式，加了 DEEPSEEK_THINKING 开关（关闭更快，也避免带工具调用时要回传思考内容）。
 19. **人设关系与表情包**：只写「像恋人」不够，模型仍按「健康助手」身份回答关系问题，所以人设加了 relationship 字段（保留：真心问是否真人时承认是 AI、不鼓励依赖）；加了「清空聊天记录」摆脱旧对话惯性。表情包用 ClawBot 发图片实现（getuploadurl → AES-128-ECB → CDN upload → sendmessage image_item），图片由使用者自备、按心情分文件夹，模型通过 send_sticker 工具选心情，代码限频（隔 3 条回复、每天 12 张）。
 20. **v0.4 随机关心**：提醒里新增 care 类型，设置格式是时间段+每天次数（如 10:00-20:00x1）。随机时间用「用户+日期」做种子生成，同一天重启也不会变、不会重复发；离其他提醒至少 20 分钟、两次至少隔 90 分钟。内容让模型参考当天记录、最近 8 条聊天和之前主动发过的话来写，避免千篇一律。
+21. **v0.4.1 两种部署方式**：机器人只做收发消息和定时任务，算力都在云端，所以也能跑在百元级 ARM 开发板上（不需要公网 IP）。部署拆成服务器 / ARM 两份文档 + 共用的「部署之后」文档；`bootstrap.sh` 一条命令完成下载和安装，GitHub 连不上时自动重试并提示 ZIP 方式；`install.sh` 识别架构和内存，32 位板子用系统自带的 cryptography 避免现场编译，小内存自动建交换文件，检查系统时间（开发板没有电池时钟，时间错了 HTTPS 全部失败）。新增 `python -m bot setup` 配置向导：密钥在终端里隐藏输入，不经过聊天，也方便交给 AI 代部署；填完自动自检、扫码绑定、启动服务。
 
 ## 安全设计（不要轻易删）
 
@@ -102,14 +105,15 @@
 - [x] 用完整版代码在 ClawBot 通道上实测：聊天、天气、拍照、饮食记录、「正在输入」均正常，扫码人身份过滤正常。
 - [ ] 正式交给她用：她用自己的微信扫码（`python -m bot login her`），当面说明隐私和开关。
 - [ ] 用一周后根据她的反馈调整提醒时间、语气和估算准确度。
-- [ ] （可选）联网搜索工具。
+- [x] 联网搜索工具（DeepSeek Search API）。
+- [ ] 在真实 ARM 开发板上跑一遍一键安装和配置向导（目前只在 x86 服务器和模拟终端里测过）。
 
 ## 从旧版单文件部署迁移到本项目
 
 旧版是 `/root/app.py` + `/root/env.sh` + systemd 服务 `wxbot`（测试号通道）。迁移步骤：
 
 1. 停掉主动推送测试（避免两个程序同时拉同一个 ClawBot 的消息）：`systemctl stop ilink-pushtest`。
-2. 按 [DEPLOY.md](../DEPLOY.md) 第 3、4 节安装到 `/opt/clawbot-health-buddy`。
+2. 按 [deploy-server.md](deploy-server.md) 安装到 `/opt/clawbot-health-buddy`。
 3. 把 `env.sh` 里的值抄到新的 `.env`（去掉 `export`），`CHANNEL=ilink`。
 4. 复用已登录的 ClawBot：`cp /root/ilink/me.json /opt/clawbot-health-buddy/data/ilink/ && chmod 600 /opt/clawbot-health-buddy/data/ilink/me.json`。
 5. `systemctl stop wxbot && systemctl disable wxbot`，再 `systemctl start clawbot-health-buddy`。

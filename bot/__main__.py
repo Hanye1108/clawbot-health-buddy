@@ -1,6 +1,7 @@
 """命令行入口。
 
   python -m bot            启动机器人（默认）
+  python -m bot setup      配置向导（第一次部署后运行这个）
   python -m bot check      检查配置和外部服务是否可用
   python -m bot login me   扫码绑定一个微信 ClawBot（me 是自己起的名字）
   python -m bot accounts   列出已绑定的 ClawBot 账号
@@ -141,7 +142,7 @@ def cmd_check():
 
     if config.WEB_ENABLED:
         print(("ℹ️  趋势图网页对外地址：" + config.PUBLIC_URL) if config.PUBLIC_URL else
-              "ℹ️  没有配置 PUBLIC_URL，「看趋势图」功能不可用（可选，见 DEPLOY.md）")
+              "ℹ️  没有配置 PUBLIC_URL，「看趋势图」功能不可用（可选，见 docs/after-deploy.md）")
 
     print("\n全部通过 🎉" if ok else "\n还有问题需要处理")
     return 0 if ok else 1
@@ -162,6 +163,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(prog="python -m bot", description="clawbot-health-buddy")
     sub = p.add_subparsers(dest="cmd")
     sub.add_parser("run", help="启动机器人（默认）")
+    sub.add_parser("setup", help="配置向导：填密钥 → 检查 → 绑定微信 → 启动")
     sub.add_parser("check", help="检查配置和外部服务")
     lp = sub.add_parser("login", help="扫码绑定微信 ClawBot")
     lp.add_argument("name", nargs="?", default="me", help="给这个账号起的名字，如 me、her")
@@ -171,6 +173,9 @@ def main(argv=None):
     sp.add_argument("--no-new", action="store_true", help="只分到已有的心情文件夹，不新建心情")
     a = p.parse_args(argv)
 
+    if a.cmd == "setup":
+        from .setup_wizard import main as setup_main
+        return setup_main()
     if a.cmd == "check":
         return cmd_check()
     if a.cmd == "login":
