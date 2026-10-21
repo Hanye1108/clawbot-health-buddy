@@ -1,10 +1,12 @@
+import datetime
 import unittest
 from unittest import mock
 
 from helpers import DBTestCase, FakeChannel
 
 from bot import core, records
-from bot.prompts import WELCOME
+from bot.db import now
+from bot.prompts import QUIET_NOTICE, WELCOME
 
 U = "user-b"
 
@@ -67,6 +69,27 @@ class CoreTest(DBTestCase):
         records.set_reminders_flag(U, False)
         core.water_job(self.bot)
         self.assertEqual(self.texts(), [])
+
+    def test_quiet_notice_only_on_last_push_before_deadline(self):
+        records.ensure_user(U)
+        t = now()
+        nxt = core.next_daily_push(t)
+        # 窗口在下一次定时推送之后才关闭：不附提示
+        self.ch.deadline = nxt + datetime.timedelta(minutes=5)
+        self.bot.push(U, "提醒A")
+        self.assertEqual(self.texts()[-1], "提醒A")
+        # 窗口在下一次定时推送之前关闭：这是最后一条，附提示，且只附一次
+        self.ch.deadline = nxt - datetime.timedelta(minutes=5)
+        self.bot.push(U, "提醒B")
+        self.bot.push(U, "提醒C")
+        self.assertEqual(self.texts()[-2], "提醒B" + QUIET_NOTICE)
+        self.assertEqual(self.texts()[-1], "提醒C")
+
+    def test_next_daily_push_skips_weekly_jobs(self):
+        t = now().replace(hour=20, minute=0, second=0, microsecond=0)
+        nxt = core.next_daily_push(t)
+        self.assertEqual((nxt.date() - t.date()).days, 1)
+        self.assertEqual((nxt.hour, nxt.minute), (7, 0))
 
     def test_weekly_without_data_does_not_call_model(self):
         records.ensure_user(U)

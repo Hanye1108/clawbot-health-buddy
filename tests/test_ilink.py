@@ -1,4 +1,5 @@
 import base64
+import datetime
 import os
 import unittest
 from unittest import mock
@@ -9,7 +10,7 @@ from helpers import DBTestCase
 
 from bot import config
 from bot.channels import chunks, ilink
-from bot.db import run
+from bot.db import now, now_iso, run
 
 
 def encrypt(data, key):
@@ -121,12 +122,24 @@ class ChannelSendTest(DBTestCase):
         (config.ILINK_ACCOUNTS_DIR / "me.json").write_text(
             '{"bot_token": "t", "ilink_bot_id": "bot1", "ilink_user_id": "u"}')
         ch = ilink.IlinkChannel(FakeBot())
-        run("INSERT INTO ilink_sessions VALUES ('bot1', 'u', 'ctxA', '2026-01-01')")
+        run("INSERT INTO ilink_sessions VALUES ('bot1', 'u', 'ctxA', ?)", (now_iso(),))
         with mock.patch.object(ilink.Account, "post", return_value={}) as post:
             self.assertTrue(ch.send_text("u", "hello"))
         body = post.call_args[0][1]["msg"]
         self.assertEqual((body["to_user_id"], body["context_token"]), ("u", "ctxA"))
         self.assertEqual(body["item_list"][0]["text_item"]["text"], "hello")
+
+    def test_send_skipped_after_push_window(self):
+        config.ILINK_ACCOUNTS_DIR.mkdir(parents=True, exist_ok=True)
+        (config.ILINK_ACCOUNTS_DIR / "me.json").write_text(
+            '{"bot_token": "t", "ilink_bot_id": "bot1", "ilink_user_id": "u"}')
+        ch = ilink.IlinkChannel(FakeBot())
+        old = (now() - datetime.timedelta(hours=config.ILINK_PUSH_WINDOW_HOURS + 1)).isoformat()
+        run("INSERT INTO ilink_sessions VALUES ('bot1', 'u', 'ctxA', ?)", (old,))
+        with mock.patch.object(ilink.Account, "post", return_value={}) as post:
+            self.assertFalse(ch.send_text("u", "hello"))
+            post.assert_not_called()
+        self.assertLess(ch.push_deadline("u"), now())
 
 
 if __name__ == "__main__":

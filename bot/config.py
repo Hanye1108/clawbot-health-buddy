@@ -64,6 +64,9 @@ ILINK_BASE_URL = env("ILINK_BASE_URL", "https://ilinkai.weixin.qq.com").rstrip("
 ILINK_CDN_URL = env("ILINK_CDN_URL", "https://novac2c.cdn.weixin.qq.com/c2c").rstrip("/")
 ILINK_ACCOUNTS_DIR = DATA_DIR / "ilink"
 ILINK_ONLY_OWNER = env("ILINK_ONLY_OWNER", "1") == "1"
+# 主动推送窗口：实测她最后一次发消息后 12 小时还能主动推送，24 小时就不行了。
+# 超过这个小时数就不再尝试主动发送（暂存起来，等她下次说话时补发）。
+ILINK_PUSH_WINDOW_HOURS = float(env("ILINK_PUSH_WINDOW_HOURS", "23") or 23)
 
 # 公众号测试号（CHANNEL=mp 时才需要）
 WX_TOKEN = env("WX_TOKEN")

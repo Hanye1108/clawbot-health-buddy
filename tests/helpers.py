@@ -35,3 +35,8 @@ class FakeChannel:
     def send_fallback(self, uid, text):
         self.fallbacks.append((uid, text))
         return self.fallback_ok
+
+    deadline = None
+
+    def push_deadline(self, uid):
+        return self.deadline

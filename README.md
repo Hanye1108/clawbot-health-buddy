@@ -102,7 +102,9 @@ PYTHONPATH=.:tests python -m unittest discover -s tests
 
 ## 进展与已知问题
 
-见 [docs/PROGRESS.md](docs/PROGRESS.md)。主要待验证：ClawBot 主动推送的时效、ClawBot 通道下的图片格式。
+见 [docs/PROGRESS.md](docs/PROGRESS.md)。主要待验证：ClawBot 通道下的图片格式。
+
+> ClawBot 的主动推送只在对方最近约 24 小时内说过话时有效（已实测）。对方一天没理机器人，它就安静下来，等对方回来再补发错过的天气和周总结。
 
 ## 许可证
 

@@ -3,10 +3,12 @@ import json
 import logging
 import random
 
+import datetime
+
 from . import llm, records
-from .db import now
-from .prompts import (HELP, MEAL_PROMPTS, MORNING_INSTR, SYSTEM_PROMPT, WATER, WEEKLY_INSTR,
-                      WEIGH, WELCOME)
+from .db import kv_get, kv_set, now
+from .prompts import (HELP, MEAL_PROMPTS, MORNING_INSTR, QUIET_NOTICE, SYSTEM_PROMPT, WATER,
+                      WEEKLY_INSTR, WEIGH, WELCOME)
 from .tools import TOOLS, run_tool
 from .weather import get_weather
 
@@ -25,10 +27,23 @@ class Bot:
             log.exception("发送失败")
             return False
 
+    def with_quiet_notice(self, uid, text):
+        """如果这是推送窗口关闭前最后一条能送达的提醒，附上一句说明（每次沉默只附一次）。"""
+        deadline = self.channel.push_deadline(uid)
+        if not deadline or now() > deadline:
+            return text
+        nxt = next_daily_push(now())
+        key = f"quiet_notice:{uid}"
+        if nxt and nxt > deadline and kv_get(key) != deadline.isoformat():
+            kv_set(key, deadline.isoformat())
+            return text + QUIET_NOTICE
+        return text
+
     def push(self, uid, text, nudge=None, keep_hours=12):
         """主动推送。先正常发送；失败时：
         - 有 nudge：全文暂存，等她下次说话时补发；若通道支持兜底（测试号模板消息），再发一句提示。
         - 没有 nudge：尝试用兜底方式发全文（内容会被截短）。"""
+        text = self.with_quiet_notice(uid, text)
         if self.send(uid, text):
             records.add_chat(uid, "assistant", text)
             return True
@@ -197,7 +212,7 @@ def weekly_job(bot, only=None):
                     bot.push(uid, "这周还没有饮食或运动记录哦～先随手记一顿试试，有了记录我就能给你写小结啦。")
                 continue
             text = llm.write(WEEKLY_INSTR, json.dumps(stats, ensure_ascii=False))
-            bot.push(uid, text, nudge="本周的小结写好啦，回我任意一句就能看到～", keep_hours=48)
+            bot.push(uid, text, nudge="本周的小结写好啦，回我任意一句就能看到～", keep_hours=24 * 7)
         except Exception:  # noqa: BLE001
             log.exception("周总结推送失败")
 
@@ -213,6 +228,18 @@ SCHEDULE = [
     (meal_job, {"hour": 19, "minute": 0}, ("dinner",)),
     (weekly_job, {"day_of_week": "sun", "hour": 20, "minute": 30}, ()),
 ]
+
+
+def next_daily_push(after):
+    """SCHEDULE 里每天都有的推送中，after 之后的下一次时间。"""
+    slots = sorted({(w["hour"], w["minute"]) for _, w, _ in SCHEDULE if "day_of_week" not in w})
+    for day in (0, 1):
+        base = (after + datetime.timedelta(days=day)).replace(second=0, microsecond=0)
+        for h, m in slots:
+            t = base.replace(hour=h, minute=m)
+            if t > after + datetime.timedelta(minutes=1):
+                return t
+    return None
 
 
 def start_scheduler(bot):

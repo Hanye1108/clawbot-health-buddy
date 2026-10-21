@@ -8,6 +8,7 @@
 - 图片走微信 CDN，AES-128-ECB 加密，需要下载后解密。
 """
 import base64
+import datetime
 import json
 import logging
 import random
@@ -19,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 
 from .. import config
-from ..db import kv_get, kv_set, now_iso, run
+from ..db import kv_get, kv_set, now, now_iso, run
 from . import Channel, chunks
 
 log = logging.getLogger(__name__)
@@ -219,15 +220,29 @@ class IlinkChannel(Channel):
             self.accounts[acc.bot_id] = acc
 
     def _session(self, uid):
-        rows = run("SELECT account_id, context_token FROM ilink_sessions WHERE user_id=? "
+        rows = run("SELECT account_id, context_token, updated_at FROM ilink_sessions WHERE user_id=? "
                    "ORDER BY updated_at DESC LIMIT 1", (uid,), fetch=True)
-        return (rows[0]["account_id"], rows[0]["context_token"]) if rows else (None, None)
+        return dict(rows[0]) if rows else {}
+
+    def push_deadline(self, uid):
+        s = self._session(uid)
+        if not s.get("updated_at"):
+            return None
+        last = datetime.datetime.fromisoformat(s["updated_at"])
+        return last + datetime.timedelta(hours=config.ILINK_PUSH_WINDOW_HOURS)
 
     def send_text(self, uid, text):
-        account_id, ctx = self._session(uid)
-        acc = self.accounts.get(account_id)
+        s = self._session(uid)
+        acc = self.accounts.get(s.get("account_id"))
+        ctx = s.get("context_token")
         if not acc or not ctx:
             log.warning("没有该用户的会话令牌，无法发送（她需要先给 ClawBot 发一条消息）")
+            return False
+        deadline = self.push_deadline(uid)
+        if deadline and now() > deadline:
+            # 超时后发送接口未必报错，但消息送不到，所以按时间主动判断
+            log.info("距她上次发消息已超过 %s 小时，微信不允许主动发送，先暂存",
+                     config.ILINK_PUSH_WINDOW_HOURS)
             return False
         try:
             return acc.send(uid, text, ctx)
