@@ -102,7 +102,7 @@ PYTHONPATH=.:tests python -m unittest discover -s tests
 
 ## 进展与已知问题
 
-见 [docs/PROGRESS.md](docs/PROGRESS.md)。主要待验证：ClawBot 通道下的图片格式。
+见 [docs/PROGRESS.md](docs/PROGRESS.md)。ClawBot 通道的聊天、天气、拍照识别都已在真实微信里验证，文字回复约 2～3 秒。
 
 > ClawBot 的主动推送只在对方最近约 24 小时内说过话时有效（已实测）。对方一天没理机器人，它就安静下来，等对方回来再补发错过的天气和周总结。
 
