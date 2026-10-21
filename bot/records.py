@@ -66,6 +66,7 @@ def clear_user_data(uid):
         run(f"DELETE FROM {table} WHERE user_id=?", (uid,))
     run("INSERT INTO profiles (user_id, reminders, weigh_reminder, updated_at) "
         "VALUES (?, 0, 1, ?)", (uid, now_iso()))
+    run("DELETE FROM kv WHERE key=?", (f"onboard:{uid}",))
 
 
 def set_reminders_flag(uid, enabled, kind="all"):

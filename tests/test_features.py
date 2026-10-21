@@ -151,3 +151,47 @@ class ToolsTest(DBTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OnboardingTest(DBTestCase):
+    def setUp(self):
+        super().setUp()
+        from helpers import FakeChannel
+        from bot import core
+        self.ch = FakeChannel()
+        self.bot = core.Bot(self.ch)
+
+    def test_flow(self):
+        from bot import onboarding
+        from bot.prompts import INTRO_ASK_NAME
+        with mock.patch("bot.llm.chat", return_value="ok") as chat:
+            self.bot.handle_text(U, "你好")
+            self.assertEqual(self.ch.sent[-1][1], INTRO_ASK_NAME)
+            self.assertTrue(onboarding.active(U))
+            self.bot.handle_text(U, "叫我小雨")
+            system = chat.call_args[0][0][0]["content"]
+            self.assertIn("这一轮要问：称呼", system)
+            records.save_profile(U, {"nickname": "小雨", "sex": "female", "age": 28})
+            self.bot.handle_text(U, "x")
+            self.assertIn("这一轮要问：身高和体重", chat.call_args[0][0][0]["content"])
+            self.assertIn("已跳过", onboarding.skip(U, "身高和体重"))
+            self.bot.handle_text(U, "x")
+            self.assertIn("这一轮要问：平时运动多少", chat.call_args[0][0][0]["content"])
+            records.save_profile(U, {"activity": "light", "city": "杭州"})
+            self.bot.handle_text(U, "x")
+            self.assertIn("新手引导刚完成", chat.call_args[0][0][0]["content"])
+            self.assertFalse(onboarding.active(U))
+            self.bot.handle_text(U, "x")
+            self.assertNotIn("新手引导", chat.call_args[0][0][0]["content"])
+
+    def test_restart_and_clear(self):
+        from bot import onboarding
+        records.save_profile(U, {"nickname": "a", "sex": "female", "age": 28, "height_cm": 160,
+                                 "weight_kg": 50, "activity": "light", "city": "x"})
+        self.bot.handle_text(U, "重新填写资料")
+        self.assertIn("都填好啦", self.ch.sent[-1][1])
+        records.clear_user_data(U)
+        self.assertIsNone(onboarding.state(U))
+        with mock.patch("bot.llm.chat", return_value="ok") as chat:
+            self.bot.handle_text(U, "重新填写资料")
+            self.assertIn("这一轮要问：称呼", chat.call_args[0][0][0]["content"])

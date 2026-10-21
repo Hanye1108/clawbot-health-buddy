@@ -5,7 +5,7 @@ import logging
 import random
 import re
 
-from . import __version__, config, llm, records, reminders
+from . import __version__, config, llm, onboarding, records, reminders
 from .db import kv_get, kv_set, now, now_iso, run
 from .prompts import (ADMIN_GUIDE, FEATURE_GUIDE, INTRO, INTRO_ASK_NAME, INTRO_VERSION, MEAL_PROMPTS,
                       MONTHLY_INSTR, MORNING_INSTR, NIGHT_INSTR, QUIET_NOTICE, SYSTEM_PROMPT, WATER,
@@ -121,6 +121,7 @@ class Bot:
             self.say(uid, text)
         if uid == self.admin_uid():
             self.say(uid, ADMIN_GUIDE)
+        onboarding.start(uid)
         if ask_name:
             self.say(uid, INTRO_ASK_NAME)
         kv_set(f"intro:{uid}", INTRO_VERSION)
@@ -142,7 +143,7 @@ class Bot:
         info = {k: v for k, v in p.items() if k not in skip and v is not None}
         info["口味与忌口"] = records.get_prefs(uid)
         return (f"{SYSTEM_PROMPT}\n\n现在是北京时间{llm.now_text()}（{'一二三四五六日'[now().weekday()]}）。\n"
-                f"已保存的用户资料：{json.dumps(info, ensure_ascii=False)}")
+                f"已保存的用户资料：{json.dumps(info, ensure_ascii=False)}" + onboarding.prompt_for(uid))
 
     def handle_command(self, uid, cmd):
         """内置指令，返回 True 表示已处理。"""
@@ -156,7 +157,7 @@ class Bot:
         if cmd == "清除数据":
             records.clear_user_data(uid)
             self.send(uid, "好的，你的资料、饮食、运动、体重、喝水记录、提醒设置和聊天记录都已经删除了，"
-                           "提醒也先关掉了。想重新开始的话，发「开启提醒」就行。")
+                           "提醒也先关掉了。想重新开始的话，发「重新填写资料」和「开启提醒」就行。")
             return True
         if cmd in replies:
             kind, enabled, text = replies[cmd]
@@ -180,6 +181,16 @@ class Bot:
             return True
         if cmd == "#test intro":
             self.introduce(uid, ask_name=False)
+            onboarding.finish(uid)
+            return True
+        if cmd in ("重新填写资料", "完善资料", "#test onboarding"):
+            onboarding.start(uid)
+            left = onboarding.remaining(uid)
+            if left:
+                self.handle_llm(uid, "我想完善一下我的资料")
+            else:
+                onboarding.finish(uid)
+                self.send(uid, "你的基本资料都填好啦。想改哪项直接告诉我，比如「我现在55公斤」「我搬到杭州了」。")
             return True
         if cmd.startswith("#test"):
             parts = cmd.split()
@@ -209,6 +220,9 @@ class Bot:
         if self.handle_command(uid, cmd):
             return
         self.deliver_pending(uid)
+        self.handle_llm(uid, text)
+
+    def handle_llm(self, uid, text):
         try:
             records.add_chat(uid, "user", text)
             messages = [{"role": "system", "content": self.build_system(uid)}] + records.load_history(uid)

@@ -2,7 +2,8 @@
 import json
 import logging
 
-from . import records, reminders
+from . import onboarding, records, reminders
+from .onboarding import STEP_NAMES
 from .records import MET, PREF_KINDS
 from .reminders import KINDS
 from .weather import get_weather
@@ -118,6 +119,15 @@ TOOLS = [
         "parameters": {"type": "object", "properties": {
             "month": {"type": "string", "description": "YYYY-MM，可选"}}}}},
     {"type": "function", "function": {
+        "name": "skip_onboarding_step",
+        "description": "新手引导中，用户不想回答某一项时调用，之后不再问这一项。",
+        "parameters": {"type": "object", "properties": {
+            "step": {"type": "string", "enum": STEP_NAMES}}, "required": ["step"]}}},
+    {"type": "function", "function": {
+        "name": "finish_onboarding",
+        "description": "结束新手引导（资料问完了，或用户说以后再填）。",
+        "parameters": {"type": "object", "properties": {}}}},
+    {"type": "function", "function": {
         "name": "get_report_link",
         "description": "生成一个临时网页链接，可以看体重、热量、运动、喝水的趋势图，也可以下载全部记录（CSV表格）。",
         "parameters": {"type": "object", "properties": {}}}},
@@ -158,6 +168,10 @@ def run_tool(uid, name, args):
             return records.delete_water(uid, args)
         if name == "get_month_summary":
             return json.dumps(records.month_stats(uid, args.get("month")), ensure_ascii=False)
+        if name == "skip_onboarding_step":
+            return onboarding.skip(uid, args.get("step", ""))
+        if name == "finish_onboarding":
+            return onboarding.finish(uid)
         if name == "get_report_link":
             from . import web
             return web.link_for_tool(uid)
