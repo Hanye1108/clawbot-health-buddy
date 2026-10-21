@@ -38,6 +38,7 @@ python3 -m venv "$APP_DIR/.venv"
 
 echo "==> [3/5] 准备配置文件和数据目录"
 mkdir -p "$APP_DIR/data/ilink" "$APP_DIR/data/backup"
+for mood in 开心 抱抱 夸夸 加油 早安 晚安 撒娇 喝水 吃饭; do mkdir -p "$APP_DIR/stickers/$mood"; done
 chmod 700 "$APP_DIR/data" "$APP_DIR/data/ilink" "$APP_DIR/data/backup"
 if [[ ! -f "$APP_DIR/.env" ]]; then
   cp "$APP_DIR/.env.example" "$APP_DIR/.env"

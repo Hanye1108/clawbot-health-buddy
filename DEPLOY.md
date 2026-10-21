@@ -199,6 +199,7 @@ journalctl -u clawbot-health-buddy -n 30 --no-pager    # 应看到「已启动�
 | ClawBot 登录过期（日志出现「需要重新扫码」） | `.venv/bin/python -m bot login me` 然后重启 |
 | 改提醒时间 | 每个人在微信里直接说就行（「早饭提醒改到9点」）；想改所有新用户的默认值，编辑 `bot/reminders.py` 顶部的 `KINDS`，然后重启 |
 | 改名字、性格、问候语、提醒文案 | 编辑项目根目录的 `persona.yaml`，只写想改的项（没有就 `cp deploy/persona.example.yaml persona.yaml`；全部可改项见 `bot/persona_default.yaml`），然后管理员在微信里发 `#reload` 立即生效，不用重启；改坏了会提示哪一行有问题并继续用旧的 |
+| 添加表情包 | 图片放进 `stickers/<心情>/`（如 `stickers/开心/`，png/jpg/gif/webp，单张 ≤2MB），管理员发 `#reload` 生效，回复里会列出识别到的心情。详见 `stickers/README.md` |
 | 查看运行状态 | 管理员在自己的 ClawBot 里发 `#status`：各账号最后收到消息的时间、推送窗口、DeepSeek 余额 |
 | 测试告警 | 管理员发 `#test alert`，应收到一条「⚠️ 小助手运行提醒」 |
 | 更新代码后 | 新版本可能加了依赖，运行 `.venv/bin/pip install -r requirements.txt`（国内加 `-i https://pypi.tuna.tsinghua.edu.cn/simple`）再重启 |

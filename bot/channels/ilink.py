@@ -86,6 +86,15 @@ def aes_ecb_decrypt(data, key):
     return unpadder.update(plain) + unpadder.finalize()
 
 
+def aes_ecb_encrypt(data, key):
+    from cryptography.hazmat.primitives import padding
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    padder = padding.PKCS7(128).padder()
+    padded = padder.update(data) + padder.finalize()
+    enc = Cipher(algorithms.AES(key), modes.ECB()).encryptor()
+    return enc.update(padded) + enc.finalize()
+
+
 def download_image(image_item):
     media = image_item.get("media") or {}
     param = media.get("encrypt_query_param")
@@ -129,6 +138,37 @@ class Account:
             if resp.get("ret") not in (None, 0) or resp.get("errcode") not in (None, 0):
                 log.warning("[%s] 发送失败：%s", self.name, resp)
                 return False
+        return True
+
+    def send_image(self, uid, data, context_token):
+        """上传图片到微信 CDN（AES-128-ECB 加密）后发送。"""
+        import hashlib
+        import os
+        key = os.urandom(16)
+        filekey = os.urandom(16).hex()
+        enc = aes_ecb_encrypt(data, key)
+        resp = self.post("ilink/bot/getuploadurl", {
+            "filekey": filekey, "media_type": 1, "to_user_id": uid,
+            "rawsize": len(data), "rawfilemd5": hashlib.md5(data).hexdigest(),
+            "filesize": len(enc), "no_need_thumb": True, "aeskey": key.hex()})
+        param = resp.get("upload_param")
+        if not param:
+            raise RuntimeError(f"申请上传失败：{ {k: v for k, v in resp.items() if k != 'upload_param'} }")
+        r = requests.post(f"{config.ILINK_CDN_URL}/upload", params={"encrypted_query_param": param, "filekey": filekey},
+                          data=enc, headers={"Content-Type": "application/octet-stream"}, timeout=30)
+        eqp = r.headers.get("x-encrypted-param")
+        if r.status_code != 200 or not eqp:
+            raise RuntimeError(f"上传到 CDN 失败：HTTP {r.status_code} {r.headers.get('x-error-message', '')}")
+        resp = self.post("ilink/bot/sendmessage", {"msg": {
+            "from_user_id": "", "to_user_id": uid,
+            "client_id": f"chb-{uuid.uuid4().hex[:16]}",
+            "message_type": 2, "message_state": 2, "context_token": context_token,
+            "item_list": [{"type": 2, "image_item": {
+                "media": {"encrypt_query_param": eqp,
+                          "aes_key": base64.b64encode(key.hex().encode()).decode(), "encrypt_type": 1},
+                "mid_size": len(enc)}}]}})
+        if resp.get("ret") not in (None, 0) or resp.get("errcode") not in (None, 0):
+            raise RuntimeError(f"发送图片失败：{resp}")
         return True
 
     # ---------- "对方正在输入…" ----------
@@ -287,18 +327,35 @@ class IlinkChannel(Channel):
         last = datetime.datetime.fromisoformat(s["updated_at"])
         return last + datetime.timedelta(hours=config.ILINK_PUSH_WINDOW_HOURS)
 
-    def send_text(self, uid, text):
+    def _ready(self, uid):
+        """返回 (账号, 会话令牌)；不能发送时返回 (None, None)。"""
         s = self._session(uid)
         acc = self.accounts.get(s.get("account_id"))
         ctx = s.get("context_token")
         if not acc or not ctx:
             log.warning("没有该用户的会话令牌，无法发送（她需要先给 ClawBot 发一条消息）")
-            return False
+            return None, None
         deadline = self.push_deadline(uid)
         if deadline and now() > deadline:
             # 超时后发送接口未必报错，但消息送不到，所以按时间主动判断
             log.info("距她上次发消息已超过 %s 小时，微信不允许主动发送，先暂存",
                      config.ILINK_PUSH_WINDOW_HOURS)
+            return None, None
+        return acc, ctx
+
+    def send_image(self, uid, data):
+        acc, ctx = self._ready(uid)
+        if not acc:
+            return False
+        try:
+            return acc.send_image(uid, data, ctx)
+        except Exception as e:  # noqa: BLE001
+            log.warning("[%s] 发送图片失败：%s", acc.name, e)
+            return False
+
+    def send_text(self, uid, text):
+        acc, ctx = self._ready(uid)
+        if not acc:
             return False
         try:
             return acc.send(uid, text, ctx)

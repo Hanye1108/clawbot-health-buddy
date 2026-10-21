@@ -12,6 +12,8 @@ class DBTestCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self._old = (config.DB_PATH, config.DATA_DIR, config.ILINK_ACCOUNTS_DIR)
+        self._old_stickers = config.STICKERS_DIR
+        config.STICKERS_DIR = Path(self.tmp.name) / "stickers"
         config.DATA_DIR = Path(self.tmp.name)
         config.DB_PATH = config.DATA_DIR / "bot.db"
         config.ILINK_ACCOUNTS_DIR = config.DATA_DIR / "ilink"
@@ -19,6 +21,9 @@ class DBTestCase(unittest.TestCase):
 
     def tearDown(self):
         config.DB_PATH, config.DATA_DIR, config.ILINK_ACCOUNTS_DIR = self._old
+        config.STICKERS_DIR = self._old_stickers
+        from bot import stickers
+        stickers._library = {}
         self.tmp.cleanup()
 
 
@@ -44,6 +49,10 @@ class FakeChannel:
 
     def admin_uid(self):
         return self.admin
+
+    def send_image(self, uid, data):
+        self.images = getattr(self, "images", []) + [(uid, data)]
+        return self.ok
 
     def status_lines(self):
         return ["通道正常"]

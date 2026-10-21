@@ -1,6 +1,8 @@
 # 密钥与数据：绝不提交
 .env
 persona.yaml
+stickers/*
+!stickers/README.md
 data/
 *.db
 *.db-journal

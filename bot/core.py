@@ -5,7 +5,7 @@ import logging
 import random
 import re
 
-from . import __version__, config, llm, onboarding, persona, records, reminders, timers
+from . import __version__, config, llm, onboarding, persona, records, reminders, stickers, timers
 from .db import kv_get, kv_set, now, now_iso, run
 from . import prompts as P
 from .tools import TOOLS, run_tool
@@ -19,6 +19,7 @@ GUIDE_CMDS = ("功能介绍", "帮助", "help", "/help", "你能做什么", "使
 class Bot:
     def __init__(self, channel=None):
         self.channel = channel
+        stickers.load()
         self.started = now()
         self.fails = {"llm": 0, "vision": 0}
 
@@ -181,8 +182,10 @@ class Bot:
         if cmd == "#reload" and is_admin:
             try:
                 p = P.load()
+                stickers.load()
                 src = "persona.yaml" if persona.user_file() else "默认设置（还没有 persona.yaml）"
-                self.send(uid, f"已重新加载{src}。名字：{p['name']}。")
+                self.send(uid, f"已重新加载{src}。名字：{p['name']}。\n"
+                               f"表情包：{'、'.join(stickers.moods()) or '没有（stickers 文件夹是空的）'}")
             except Exception as e:  # noqa: BLE001
                 self.send(uid, f"加载失败，继续使用原来的设置：\n{e}")
             return True
@@ -234,17 +237,44 @@ class Bot:
         self.handle_llm(uid, text)
 
     def handle_llm(self, uid, text):
+        sticker = []
+
+        def tool(name, args):
+            if name != "send_sticker":
+                return run_tool(uid, name, args)
+            if sticker:
+                return "这条回复已经配了表情包，不要再配"
+            ok, why = stickers.allowed(uid)
+            if not ok:
+                return why
+            mood = args.get("mood", "")
+            if mood not in stickers.moods():
+                return f"没有这种表情包，可选：{'、'.join(stickers.moods())}"
+            sticker.append(mood)
+            return f"好的，会在你的文字后面发一张「{mood}」表情包；文字里不用再提表情包"
+
+        tools = TOOLS + ([stickers.tool_spec()] if stickers.tool_spec() else [])
         try:
             records.add_chat(uid, "user", text)
             messages = [{"role": "system", "content": self.build_system(uid)}] + records.load_history(uid)
-            answer = llm.chat(messages, TOOLS, lambda name, args: run_tool(uid, name, args))
+            answer = llm.chat(messages, tools, tool)
             records.add_chat(uid, "assistant", answer)
             self._ok("llm")
         except Exception as e:  # noqa: BLE001
             log.exception("处理消息失败")
             answer = "我刚刚走神了，能再说一遍吗？"
+            sticker.clear()
             self._failed("llm", e, 3, "DeepSeek 对话")
         self.send(uid, answer)
+        if sticker:
+            self.send_sticker(uid, sticker[0])
+
+    def send_sticker(self, uid, mood):
+        data = stickers.pick(mood)
+        if data and self.channel.send_image(uid, data):
+            records.add_chat(uid, "assistant", f"[表情包:{mood}]")
+            return True
+        return False
 
     def handle_image(self, uid, data, mime=None):
         try:

@@ -54,6 +54,8 @@ VISION_MODEL = env("VISION_MODEL", "deepseek-flash")
 DEEPSEEK_THINKING = env("DEEPSEEK_THINKING", "").lower()
 # 联网搜索（DeepSeek 官方 Search API，同一个 Key，按次计费）
 SEARCH_ENABLED = env("SEARCH_ENABLED", "1") == "1"
+# 表情包文件夹（按心情分子文件夹放图片），见 stickers/README.md
+STICKERS_DIR = Path(env("STICKERS_DIR") or ROOT / "stickers")
 
 # 和风天气（新版接口，需要控制台「设置」页里的专属 API Host）
 QWEATHER_KEY = env("QWEATHER_KEY")
