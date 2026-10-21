@@ -47,7 +47,7 @@ else
 fi
 chmod 600 "$APP_DIR/.env"
 if [[ ! -f "$APP_DIR/persona.yaml" ]]; then
-  cp "$APP_DIR/bot/persona_default.yaml" "$APP_DIR/persona.yaml"
+  cp "$APP_DIR/deploy/persona.example.yaml" "$APP_DIR/persona.yaml"
   echo "    已生成 $APP_DIR/persona.yaml（助手的名字、性格、问候语，可按喜好修改）"
 fi
 

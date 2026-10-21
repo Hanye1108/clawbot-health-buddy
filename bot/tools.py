@@ -2,7 +2,7 @@
 import json
 import logging
 
-from . import onboarding, records, reminders
+from . import onboarding, records, reminders, timers
 from .onboarding import STEP_NAMES
 from .records import MET, PREF_KINDS
 from .reminders import KINDS
@@ -91,6 +91,27 @@ TOOLS = [
                                                  "mon", "tue", "wed", "thu", "fri", "sat", "sun"]}},
             "required": ["kind"]}}},
     {"type": "function", "function": {
+        "name": "set_timer",
+        "description": "设置一条临时提醒（比如「20秒后提醒我喝水」「下午3点提醒我开会」「每天晚上9点提醒我吃维生素」）。"
+                       "相对时间用 delay_seconds，具体时刻用 at；到点会发一条「⏰ 内容」给用户。",
+        "parameters": {"type": "object", "properties": {
+            "text": {"type": "string", "description": "提醒内容，简短，比如「喝水」「吃维生素」「去开会」"},
+            "delay_seconds": {"type": "number", "description": "多少秒后提醒（20分钟=1200）"},
+            "at": {"type": "string", "description": "具体时刻，YYYY-MM-DD HH:MM，或只写 HH:MM（已过则默认明天）"},
+            "repeat": {"type": "string", "enum": ["none", "daily", "weekdays", "weekends"],
+                       "description": "重复：none一次（默认）、daily每天、weekdays工作日、weekends周末"}},
+            "required": ["text"]}}},
+    {"type": "function", "function": {
+        "name": "list_timers",
+        "description": "查看用户设置的、还没发的临时提醒。",
+        "parameters": {"type": "object", "properties": {}}}},
+    {"type": "function", "function": {
+        "name": "cancel_timer",
+        "description": "取消临时提醒。编号从 list_timers 得到；all=true 取消全部。",
+        "parameters": {"type": "object", "properties": {
+            "timer_ids": {"type": "array", "items": {"type": "integer"}},
+            "all": {"type": "boolean"}}}}},
+    {"type": "function", "function": {
         "name": "get_reminders",
         "description": "查看用户当前的全部提醒设置。",
         "parameters": {"type": "object", "properties": {}}}},
@@ -158,6 +179,12 @@ def run_tool(uid, name, args):
             return json.dumps(records.week_stats(uid), ensure_ascii=False)
         if name == "set_reminder":
             return reminders.tool_set(uid, args)
+        if name == "set_timer":
+            return timers.create(uid, args)
+        if name == "list_timers":
+            return timers.list_timers(uid)
+        if name == "cancel_timer":
+            return timers.cancel(uid, args)
         if name == "get_reminders":
             return reminders.describe(uid)
         if name == "update_preferences":

@@ -163,6 +163,7 @@ journalctl -u clawbot-health-buddy -n 30 --no-pager    # 应看到「已启动�
 | `喝了一杯水` | 记录 250ml，告诉你今天喝了多少 |
 | `我不吃香菜，乳糖不耐` | 记住口味；之后问「晚饭吃什么」会避开 |
 | `早饭提醒改到9点` | 改提醒时间；发 `我的提醒设置` 查看全部提醒 |
+| `30秒后提醒我喝水` | 30 秒后收到「⏰ 喝水」；也可以「下午3点提醒我开会」「每天晚上9点提醒我吃维生素」，问「我设了哪些提醒」查看、可取消 |
 | `看看我的趋势图` | 发来一个网页链接（需要先完成第 10 节的「趋势图网页」配置，否则会说暂时看不了） |
 | `#test morning` | 立即触发一次早安天气推送（其他：`#test lunch`、`#test water`、`#test night`、`#test weigh`、`#test weekly`、`#test monthly`、`#test intro`） |
 | `清除数据` | 删除这个人的所有记录 |
@@ -197,7 +198,7 @@ journalctl -u clawbot-health-buddy -n 30 --no-pager    # 应看到「已启动�
 | 从备份恢复 | `systemctl stop clawbot-health-buddy && cp data/backup/bot-3.db data/bot.db && systemctl start clawbot-health-buddy` |
 | ClawBot 登录过期（日志出现「需要重新扫码」） | `.venv/bin/python -m bot login me` 然后重启 |
 | 改提醒时间 | 每个人在微信里直接说就行（「早饭提醒改到9点」）；想改所有新用户的默认值，编辑 `bot/reminders.py` 顶部的 `KINDS`，然后重启 |
-| 改名字、性格、问候语、提醒文案 | 编辑项目根目录的 `persona.yaml`（没有就 `cp bot/persona_default.yaml persona.yaml`），然后管理员在微信里发 `#reload` 立即生效，不用重启；改坏了会提示哪一行有问题并继续用旧的 |
+| 改名字、性格、问候语、提醒文案 | 编辑项目根目录的 `persona.yaml`，只写想改的项（没有就 `cp deploy/persona.example.yaml persona.yaml`；全部可改项见 `bot/persona_default.yaml`），然后管理员在微信里发 `#reload` 立即生效，不用重启；改坏了会提示哪一行有问题并继续用旧的 |
 | 查看运行状态 | 管理员在自己的 ClawBot 里发 `#status`：各账号最后收到消息的时间、推送窗口、DeepSeek 余额 |
 | 测试告警 | 管理员发 `#test alert`，应收到一条「⚠️ 小助手运行提醒」 |
 | 更新代码后 | 新版本可能加了依赖，运行 `.venv/bin/pip install -r requirements.txt`（国内加 `-i https://pypi.tuna.tsinghua.edu.cn/simple`）再重启 |

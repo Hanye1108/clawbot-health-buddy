@@ -5,7 +5,7 @@ import logging
 import random
 import re
 
-from . import __version__, config, llm, onboarding, persona, records, reminders
+from . import __version__, config, llm, onboarding, persona, records, reminders, timers
 from .db import kv_get, kv_set, now, now_iso, run
 from . import prompts as P
 from .tools import TOOLS, run_tool
@@ -343,7 +343,11 @@ def run_kind(bot, uid, kind, force=False):
 
 
 def tick(bot):
-    """每分钟运行：给每个开着提醒的人，发到点的提醒。"""
+    """每分钟运行：给每个开着提醒的人，发到点的提醒；补发错过的临时提醒。"""
+    try:
+        timers.fire_overdue()
+    except Exception:  # noqa: BLE001
+        log.exception("临时提醒补发失败")
     users = [r["user_id"] for r in run("SELECT user_id FROM profiles WHERE reminders=1", fetch=True)]
     for uid in users:
         for kind, _slot in reminders.due(uid):
@@ -374,4 +378,5 @@ def start_scheduler(bot):
     s.add_job(balance_job, "cron", args=(bot,), hour=9, minute=5, **kw)
     s.add_job(reminders.cleanup_log, "cron", hour=3, minute=30, **kw)
     s.start()
+    timers.attach(s, bot)
     return s

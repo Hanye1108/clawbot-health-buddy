@@ -46,6 +46,10 @@ SCHEMA = [
         user_id TEXT, kind TEXT, slot TEXT, PRIMARY KEY (user_id, kind, slot))""",
     """CREATE TABLE IF NOT EXISTS report_links (
         token TEXT PRIMARY KEY, user_id TEXT, expires_at TEXT)""",
+    """CREATE TABLE IF NOT EXISTS timers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, due_at TEXT, text TEXT,
+        repeat TEXT, sent INTEGER, created_at TEXT)""",
+    "CREATE INDEX IF NOT EXISTS idx_timers ON timers(sent, due_at)",
 ]
 
 # 旧版本数据库升级时补的列
@@ -55,7 +59,7 @@ MIGRATIONS = [
 ]
 
 USER_TABLES = ("profiles", "chat", "meals", "exercises", "weights", "pending", "ilink_sessions",
-               "water", "reminder_settings", "reminder_log", "report_links")
+               "water", "reminder_settings", "reminder_log", "report_links", "timers")
 
 
 def run(sql, args=(), fetch=False):
@@ -65,6 +69,22 @@ def run(sql, args=(), fetch=False):
         rows = cur.fetchall() if fetch else None
         conn.commit()
         return rows
+
+
+def update(sql, args=()):
+    """执行写操作，返回影响的行数（用来防止重复发送）。"""
+    with closing(sqlite3.connect(str(config.DB_PATH), timeout=10)) as conn:
+        cur = conn.execute(sql, args)
+        conn.commit()
+        return cur.rowcount
+
+
+def insert(sql, args=()):
+    """执行插入，返回新行的 id。"""
+    with closing(sqlite3.connect(str(config.DB_PATH), timeout=10)) as conn:
+        cur = conn.execute(sql, args)
+        conn.commit()
+        return cur.lastrowid
 
 
 def init_db():
