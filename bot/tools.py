@@ -87,7 +87,9 @@ TOOLS = [
         "parameters": {"type": "object", "properties": {
             "kind": {"type": "string", "enum": ["all"] + list(KINDS.keys())},
             "enabled": {"type": "boolean"},
-            "times": {"type": "string", "description": "HH:MM，多个用逗号分开，如 09:00 或 10:00,15:00,17:30"},
+            "times": {"type": "string", "description": "HH:MM，多个用逗号分开，如 09:00 或 10:00,15:00,17:30；"
+                                                       "随机关心(care)写时间段，如 10:00-20:00"},
+            "count": {"type": "integer", "description": "只用于随机关心：每天几次（1～3）"},
             "days": {"type": "string", "enum": ["all", "weekdays", "weekends",
                                                  "mon", "tue", "wed", "thu", "fri", "sat", "sun"]}},
             "required": ["kind"]}}},

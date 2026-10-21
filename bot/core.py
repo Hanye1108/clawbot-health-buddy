@@ -363,9 +363,32 @@ def night(bot, uid, force=False):
     bot.push(uid, llm.write(P.NIGHT_INSTR, json.dumps(s, ensure_ascii=False)))
 
 
+def care(bot, uid, force=False):
+    """白天随机时间主动说一句关心或打招呼的话。她刚聊过就不打扰。"""
+    last = run("SELECT ts FROM chat WHERE user_id=? AND role='user' ORDER BY id DESC LIMIT 1", (uid,), fetch=True)
+    if not force and last:
+        if now() - datetime.datetime.fromisoformat(last[0]["ts"]) < datetime.timedelta(minutes=60):
+            return
+    recent = run("SELECT role, content FROM chat WHERE user_id=? ORDER BY id DESC LIMIT 8", (uid,), fetch=True)
+    s = records.day_summary(uid)
+    sent_before = json.loads(kv_get(f"care_history:{uid}", "[]"))
+    ctx = {
+        "现在": f"{llm.now_text()}，星期{'一二三四五六日'[now().weekday()]}",
+        "她的称呼": records.get_profile(uid).get("nickname") or "",
+        "今天的记录": {"吃了几餐": len(s["饮食"]), "运动": [e["内容"] for e in s["运动"]],
+                       "喝水毫升": s["喝水合计毫升"], "喝水目标毫升": s["喝水目标毫升"]},
+        "最近的聊天（从新到旧）": [f"{'她' if r['role'] == 'user' else '你'}：{r['content'][:80]}"
+                                 for r in recent if not r["content"].startswith("[表情包")],
+        "你之前主动发过的话（不要重复）": sent_before,
+    }
+    text = llm.write(P.CARE_INSTR, json.dumps(ctx, ensure_ascii=False))
+    if text and bot.push(uid, text):
+        kv_set(f"care_history:{uid}", json.dumps((sent_before + [text])[-8:], ensure_ascii=False))
+
+
 def run_kind(bot, uid, kind, force=False):
     funcs = {"morning": morning, "water": water, "weigh": weigh, "weekly": weekly,
-             "monthly": monthly, "night": night}
+             "monthly": monthly, "night": night, "care": care}
     try:
         if kind in ("breakfast", "lunch", "dinner"):
             meal(bot, uid, kind, force)
