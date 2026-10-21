@@ -15,6 +15,13 @@ MAX_TOOL_ROUNDS = 6
 actual_models = {}
 
 
+def opts():
+    """额外请求参数：思考模式开关（见 .env 的 DEEPSEEK_THINKING）。"""
+    if config.DEEPSEEK_THINKING in ("enabled", "disabled"):
+        return {"extra_body": {"thinking": {"type": config.DEEPSEEK_THINKING}}}
+    return {}
+
+
 def _note(resp, requested):
     real = getattr(resp, "model", None)
     if real and actual_models.get(requested) != real:
@@ -70,7 +77,7 @@ def chat(messages, tools, run_tool, fallback="我查得有点久，请再说一�
         for _ in range(MAX_TOOL_ROUNDS):
             t = time.monotonic()
             resp = client().chat.completions.create(
-                model=config.MODEL, messages=messages, tools=tools, timeout=60)
+                model=config.MODEL, messages=messages, tools=tools, timeout=60, **opts())
             timing.append(f"模型{time.monotonic() - t:.1f}s")
             _note(resp, config.MODEL)
             msg = resp.choices[0].message
@@ -97,7 +104,7 @@ def write(instruction, data):
         model=config.MODEL,
         messages=[{"role": "system", "content": f"{P.PERSONA}\n现在是北京时间{now_text()}。"},
                   {"role": "user", "content": f"{instruction}\n\n数据：{data}"}],
-        timeout=60)
+        timeout=60, **opts())
     return (resp.choices[0].message.content or "").strip()
 
 
@@ -125,7 +132,7 @@ def analyze_photo(data, mime=None):
             {"type": "text", "text": P.VISION_PROMPT},
             {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
         ]}],
-        timeout=90)
+        timeout=90, **opts())
     _note(resp, config.VISION_MODEL)
     log.info("看图耗时 %.1fs（图片 %dKB）", time.monotonic() - t, len(data) // 1024)
     raw = (resp.choices[0].message.content or "").strip()

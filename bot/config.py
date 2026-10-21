@@ -47,8 +47,11 @@ CHANNEL = env("CHANNEL", "ilink").lower()
 # DeepSeek
 DEEPSEEK_KEY = env("DEEPSEEK_KEY")
 DEEPSEEK_BASE_URL = env("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-MODEL = env("DEEPSEEK_MODEL", "deepseek-chat")
+MODEL = env("DEEPSEEK_MODEL", "deepseek-chat")   # 新部署的 .env.example 默认 deepseek-flash
 VISION_MODEL = env("VISION_MODEL", "deepseek-flash")
+# 思考模式（deepseek-flash / deepseek-v4-pro 默认开启，会慢不少）：disabled 关闭、enabled 开启、留空不传这个参数
+# 旧模型名 deepseek-chat 不认这个参数时请留空
+DEEPSEEK_THINKING = env("DEEPSEEK_THINKING", "").lower()
 
 # 和风天气（新版接口，需要控制台「设置」页里的专属 API Host）
 QWEATHER_KEY = env("QWEATHER_KEY")

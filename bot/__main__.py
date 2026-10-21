@@ -79,9 +79,10 @@ def cmd_check():
 
     if config.DEEPSEEK_KEY:
         try:
-            from .llm import client
+            from .llm import client, opts
             r = client().chat.completions.create(
-                model=config.MODEL, messages=[{"role": "user", "content": "回复OK"}], max_tokens=5, timeout=30)
+                model=config.MODEL, messages=[{"role": "user", "content": "回复OK"}], max_tokens=20, timeout=30,
+                **opts())
             show(bool(r.choices), f"DeepSeek 对话模型：配置 {config.MODEL}，实际响应 {getattr(r, 'model', '?')}")
             try:
                 from .llm import list_models

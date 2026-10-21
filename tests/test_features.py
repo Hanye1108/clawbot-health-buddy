@@ -195,3 +195,12 @@ class OnboardingTest(DBTestCase):
         with mock.patch("bot.llm.chat", return_value="ok") as chat:
             self.bot.handle_text(U, "重新填写资料")
             self.assertIn("这一轮要问：称呼", chat.call_args[0][0][0]["content"])
+
+
+class ThinkingOptsTest(unittest.TestCase):
+    def test_opts(self):
+        from bot import llm
+        with mock.patch.object(config, "DEEPSEEK_THINKING", ""):
+            self.assertEqual(llm.opts(), {})
+        with mock.patch.object(config, "DEEPSEEK_THINKING", "disabled"):
+            self.assertEqual(llm.opts(), {"extra_body": {"thinking": {"type": "disabled"}}})
