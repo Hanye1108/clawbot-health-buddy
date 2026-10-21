@@ -100,6 +100,12 @@ def cmd_check():
         except Exception as e:  # noqa: BLE001
             show(False, "DeepSeek 余额查询", str(e))
 
+        if config.SEARCH_ENABLED:
+            from .search import web_search
+            res = web_search("DeepSeek")
+            show(res.startswith("以下是网页搜索结果") or res.startswith("没有搜到"), "DeepSeek 联网搜索",
+                 res + "\n   不需要联网搜索的话，在 .env 设 SEARCH_ENABLED=0")
+
     if config.QWEATHER_KEY and config.QWEATHER_HOST:
         try:
             from .weather import lookup_city

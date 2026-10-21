@@ -6,6 +6,7 @@ from . import onboarding, records, reminders, timers
 from .onboarding import STEP_NAMES
 from .records import MET, PREF_KINDS
 from .reminders import KINDS
+from .search import web_search
 from .weather import get_weather
 
 log = logging.getLogger(__name__)
@@ -90,6 +91,13 @@ TOOLS = [
             "days": {"type": "string", "enum": ["all", "weekdays", "weekends",
                                                  "mon", "tue", "wed", "thu", "fri", "sat", "sun"]}},
             "required": ["kind"]}}},
+    {"type": "function", "function": {
+        "name": "web_search",
+        "description": "联网搜索实时信息：新闻、最近发生的事、价格、营业时间、某个食物/产品的最新资料等。闲聊和你本来就知道的常识不要搜。",
+        "parameters": {"type": "object", "properties": {
+            "query": {"type": "string", "description": "搜索关键词，简短（不超过128字），可用 after:2026-10-01 这样的语法限定时间"},
+            "question": {"type": "string", "description": "用户的原话，用来给结果排序"}},
+            "required": ["query"]}}},
     {"type": "function", "function": {
         "name": "set_timer",
         "description": "设置一条临时提醒（比如「20秒后提醒我喝水」「下午3点提醒我开会」「每天晚上9点提醒我吃维生素」）。"
@@ -179,6 +187,8 @@ def run_tool(uid, name, args):
             return json.dumps(records.week_stats(uid), ensure_ascii=False)
         if name == "set_reminder":
             return reminders.tool_set(uid, args)
+        if name == "web_search":
+            return web_search(args.get("query", ""), args.get("question", ""))
         if name == "set_timer":
             return timers.create(uid, args)
         if name == "list_timers":
