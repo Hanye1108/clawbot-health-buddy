@@ -79,6 +79,10 @@ def set_reminders_flag(uid, enabled, kind="all"):
         set_setting(uid, kind, enabled=enabled)
 
 
+def clear_chat(uid):
+    run("DELETE FROM chat WHERE user_id=?", (uid,))
+
+
 def add_chat(uid, role, content):
     run("INSERT INTO chat (user_id, role, content, ts) VALUES (?,?,?,?)",
         (uid, role, content, now_iso()))

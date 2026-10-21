@@ -70,3 +70,35 @@ class PersonaTest(DBTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RelationshipTest(DBTestCase):
+    def setUp(self):
+        super().setUp()
+        self.path = config.DATA_DIR / "persona.yaml"
+        patcher = mock.patch.object(persona, "USER_PATH", self.path)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(P.load)
+
+    def test_relationship(self):
+        P.load()
+        self.assertNotIn("【角色关系】", P.SYSTEM_PROMPT)
+        self.path.write_text("name: 小新\nrelationship: 她的恋人\n", encoding="utf-8")
+        P.load()
+        self.assertIn("你的身份是：她的恋人", P.SYSTEM_PROMPT)
+        self.assertIn("如实说自己是AI", P.SYSTEM_PROMPT)
+        self.path.write_text("relationship: [1]\n", encoding="utf-8")
+        with self.assertRaises(persona.PersonaError):
+            P.load()
+
+    def test_clear_chat_keeps_records(self):
+        from bot import records
+        ch = FakeChannel()
+        bot = core.Bot(ch)
+        records.ensure_user("u")
+        records.add_chat("u", "user", "hi")
+        records.log_water("u", {"ml": 250})
+        bot.handle_text("u", "清空聊天记录")
+        self.assertEqual(records.load_history("u"), [])
+        self.assertEqual(records.water_summary("u")["喝水合计毫升"], 250)

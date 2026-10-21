@@ -163,6 +163,10 @@ class Bot:
             records.set_reminders_flag(uid, enabled, kind)
             self.send(uid, text)
             return True
+        if cmd in ("清空聊天记录", "清除聊天记录", "忘掉聊天记录"):
+            records.clear_chat(uid)
+            self.send(uid, "好的，之前的聊天内容我都忘掉了，重新开始～ 你的资料和饮食、运动、体重这些记录都还在。")
+            return True
         if cmd in GUIDE_CMDS:
             self.guide(uid)
             return True

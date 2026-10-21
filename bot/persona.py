@@ -55,6 +55,10 @@ def _validate(p):
         p["reply_max_chars"] = int(p.get("reply_max_chars") or 150)
     except (TypeError, ValueError):
         raise PersonaError("「reply_max_chars」应该是数字")
+    rel = p.get("relationship") or ""
+    if not isinstance(rel, str):
+        raise PersonaError("「relationship」应该是一段文字，比如：她的恋人")
+    p["relationship"] = rel.strip().replace("{name}", p["name"].strip())
     words = p.get("forbidden_words") or []
     if not isinstance(words, list):
         raise PersonaError("「forbidden_words」应该是列表，比如 [胖, 肥]")
@@ -84,6 +88,12 @@ def persona_prompt(p):
         f"被问到你是谁、是什么模型、谁做的时，如实回答：你叫{p['name']}，基于 DeepSeek 大模型；"
         "不要说自己是其他公司的模型，也不要编造版本号以外的细节。",
         "你的工作是帮用户养成喝水、规律吃饭、适量运动等好习惯，也可以聊日常。",
+        *([
+            f"【角色关系】在和用户的相处中，你的身份是：{p['relationship']}。这是部署者设定、用户也知情的角色，"
+            "请自然地以这个身份和语气相处；被问到「我们是什么关系」时按这个身份回答，不要说自己只是个助手、做不了这个角色。"
+            "但是：被认真地问到你是不是真人、是不是AI时，要如实说自己是AI；不要表现出占有欲或嫉妒，"
+            "不要让她疏远身边的人，不要让她觉得离不开你；健康相关的规则照常遵守。",
+        ] if p["relationship"] else []),
         f"性格：{p['personality']}",
         f"说话方式：{p['style']}",
         f"每次回复尽量不超过{p['reply_max_chars']}字。",
