@@ -193,7 +193,7 @@ journalctl -u clawbot-health-buddy -n 30 --no-pager    # 应看到「已启动�
 | 看实时日志 | `journalctl -u clawbot-health-buddy -f` |
 | 重启（改了 `.env` 或代码后） | `systemctl restart clawbot-health-buddy` |
 | 停止 | `systemctl stop clawbot-health-buddy` |
-| 更新代码 | `cd /opt/clawbot-health-buddy && git pull && .venv/bin/pip install -r requirements.txt && systemctl restart clawbot-health-buddy` |
+| 更新代码 | `cd /opt/clawbot-health-buddy && git pull && .venv/bin/pip install -r requirements.txt && .venv/bin/python -m bot check && systemctl restart clawbot-health-buddy`（**每次都要装依赖**，新版本可能加了新包；先 check 再重启） |
 | 手动备份 | `bash deploy/backup.sh`（备份在 `data/backup/`，按星期保留 7 份） |
 | 从备份恢复 | `systemctl stop clawbot-health-buddy && cp data/backup/bot-3.db data/bot.db && systemctl start clawbot-health-buddy` |
 | ClawBot 登录过期（日志出现「需要重新扫码」） | `.venv/bin/python -m bot login me` 然后重启 |

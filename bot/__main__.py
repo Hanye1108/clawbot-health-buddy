@@ -12,7 +12,22 @@ import sys
 from . import __version__, config
 
 
+# requirements.txt 里的包 → import 时的模块名
+REQUIRED_MODULES = {"openai": "openai", "requests": "requests", "flask": "flask", "apscheduler": "apscheduler",
+                    "cryptography": "cryptography", "qrcode": "qrcode", "pyyaml": "yaml"}
+INSTALL_HINT = (".venv/bin/pip install -r requirements.txt"
+                "（国内服务器加 -i https://pypi.tuna.tsinghua.edu.cn/simple）")
+
+
+def missing_packages():
+    import importlib.util
+    return [pkg for pkg, mod in REQUIRED_MODULES.items() if importlib.util.find_spec(mod) is None]
+
+
 def cmd_run():
+    missing_pkgs = missing_packages()
+    if missing_pkgs:
+        raise SystemExit(f"缺少依赖：{', '.join(missing_pkgs)}。更新代码后请先运行：{INSTALL_HINT}")
     from .channels.ilink import IlinkChannel
     from .core import Bot, start_scheduler
     from .db import init_db
@@ -46,6 +61,11 @@ def cmd_check():
         print(("✅ " if good else "❌ ") + name + ("" if good else f"\n   → {hint}"))
 
     print(f"项目版本 {__version__}，通道 {config.CHANNEL}，数据目录 {config.DATA_DIR}\n")
+    missing_pkgs = missing_packages()
+    show(not missing_pkgs, "Python 依赖齐全", f"缺少 {', '.join(missing_pkgs)}，请运行：{INSTALL_HINT}")
+    if missing_pkgs:
+        print("\n先把依赖装好，再重新运行检查。")
+        return 1
     for name in config.missing_settings():
         show(False, f"配置项 {name}", "在 .env 里填写")
 
